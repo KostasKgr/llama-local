@@ -1,0 +1,30 @@
+{
+  "b11433-cuda12.8": [
+    {
+      "file": "llama-b11433-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11433/llama-b11433-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "sha256": "4ee66f423e5e4152b87ba7f46dd30a680b4e1d4f5205bbb2cbf0d9daf1662e5e",
+      "size": 171651185
+    },
+    {
+      "file": "cudart-llama-b11433-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11433/cudart-llama-b11433-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "sha256": "e7b5eef48c4d30d78e1130f80b9f7d0113c1b9d039adac5b6397406a92b1235b",
+      "size": 594377580
+    }
+  ],
+  "b11393-cuda12.8": [
+    {
+      "file": "llama-b11393-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11393/llama-b11393-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "sha256": "bd8a074ee086e954eab41159de4b0c1c4d4b7204d79291a3d49e0ac5b642e93f",
+      "size": 171499604
+    },
+    {
+      "file": "cudart-llama-b11393-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11393/cudart-llama-b11393-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "sha256": "1acadcd2ffd86b566940d36a14be4adbd83b1e04f36f54b9e1790bbffadcb864",
+      "size": 594377709
+    }
+  ]
+}

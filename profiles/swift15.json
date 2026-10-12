@@ -1,0 +1,16 @@
+{
+  "runtime": "b11393-cuda12.8",
+  "model": "swift15/Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf",
+  "context": 131072,
+  "batch": 2048,
+  "ubatch": 512,
+  "cache_k": "q8_0",
+  "cache_v": "q8_0",
+  "spec": "draft-mtp",
+  "draft_max": 3,
+  "alias": "swift-1.5-qwen3.8-27b-iq3s-mtp",
+  "load_mode": "dio",
+  "port": 1235,
+  "scope": "swift15",
+  "fit_off": false
+}

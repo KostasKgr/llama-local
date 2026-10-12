@@ -13,30 +13,33 @@ import threading
 import time
 from urllib.request import Request, urlopen
 
-ROOT = Path(__file__).resolve().parent
+REPO = Path(__file__).resolve().parent.parent
+import sys
+sys.path.insert(0, str(REPO))
+from lib import core, probes
+ROOT = REPO / 'logs' / 'qwen36'
+ROOT.mkdir(parents=True, exist_ok=True)
+import uuid
+SCOPE = 'qwen36-trial-' + uuid.uuid4().hex
+os.environ['LLAMA_SCOPE'] = SCOPE
 BASE = 'http://127.0.0.1:1235'
 
 
 def request(route, payload=None, timeout=1800):
-    req = Request(BASE + route, None if payload is None else json.dumps(payload).encode(),
-                  headers={'Content-Type': 'application/json'})
-    with urlopen(req, timeout=timeout) as response:
-        return json.load(response)
+    return probes.request(BASE, route, payload, timeout)
 
 
-def gpu():
-    raw = subprocess.check_output(['nvidia-smi',
-        '--query-gpu=memory.used,memory.free,temperature.gpu,power.draw',
-        '--format=csv,noheader,nounits'], text=True, timeout=10)
-    return [float(x.strip()) for x in raw.splitlines()[0].split(',')]
+gpu = probes.gpu
 
 
+OWNED = False
 def stop():
-    subprocess.run(['systemctl', '--user', 'stop', 'qwen36.scope'],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+    if OWNED:
+        probes.stop(SCOPE)
 
 
 def main():
+    global OWNED
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--label', required=True)
     parser.add_argument('--context', type=int, default=32768)
@@ -50,26 +53,31 @@ def main():
     parser.add_argument('--cache-v', default='f16')
     parser.add_argument('--prompt-file', type=Path)
     args = parser.parse_args()
+    core.preflight(core.load('qwen36'))
     if args.prompt_size + args.output_tokens + args.draft_max + 64 > args.context:
         parser.error('prompt and output must fit context without shifting')
     with socket.socket() as sock:
         sock.settimeout(2)
         if sock.connect_ex(('127.0.0.1', 1235)) == 0:
             raise RuntimeError('Port 1235 occupied; refusing to interrupt another server')
-    scope = subprocess.run(['systemctl', '--user', 'is-active', 'qwen36.scope'], capture_output=True, timeout=10)
+    scope = subprocess.run(['systemctl', '--user', 'is-active', SCOPE + '.scope'], capture_output=True, timeout=10)
     if scope.returncode == 0:
         raise RuntimeError('qwen36.scope is already active')
-    out = ROOT / 'logs' / args.label
+    out = ROOT / args.label
     out.mkdir(parents=True, exist_ok=False)
     record = vars(args).copy()
     record['prompt_file'] = str(args.prompt_file) if args.prompt_file else None
     record.update(stable=False, batch=4096, checkpoints=2, cache_ram_mib=512)
     (out / 'environment.txt').write_text(subprocess.check_output(['nvidia-smi'], text=True))
-    (out / 'launcher.sh').write_text((ROOT / 'start_qwen36.sh').read_text())
+    (out / 'launcher.sh').write_text((REPO / 'start_qwen36.sh').read_text())
     env = dict(os.environ, QWEN_CONTEXT=str(args.context), QWEN_UBATCH=str(args.ubatch),
                QWEN_DRAFT_MAX=str(args.draft_max), QWEN_SPEC_TYPE=args.spec,
                QWEN_CACHE_K=args.cache_k, QWEN_CACHE_V=args.cache_v,
                QWEN_BATCH='4096', QWEN_LOAD_MODE='dio')
+    record['resolved'] = core.snapshot('qwen36')
+    # Resolve per-trial environment overrides for the recorded launch command.
+    record['resolved']['profile'] = core.load('qwen36', {'context': args.context, 'ubatch': args.ubatch, 'draft_max': args.draft_max, 'spec': args.spec, 'cache_k': args.cache_k, 'cache_v': args.cache_v, 'batch': 4096, 'load_mode': 'dio'})
+    record['resolved']['command'] = core.command(record['resolved']['profile'])
     done = threading.Event()
     samples = []
     process = None
@@ -97,8 +105,9 @@ def main():
         monitor_thread.start()
         start = time.monotonic()
         with (out / 'server.log').open('w') as f:
-            process = subprocess.Popen([str(ROOT / 'start_qwen36.sh')], env=env,
+            process = subprocess.Popen([str(REPO / 'start_qwen36.sh')], env=env,
                                        stdout=f, stderr=subprocess.STDOUT)
+            OWNED = True
         deadline = start + 300
         while True:
             if process.poll() is not None:
@@ -113,7 +122,7 @@ def main():
             time.sleep(1)
         record['load_seconds'] = time.monotonic() - start
         record['gpu_after_load'] = gpu()
-        record['scope_limits'] = subprocess.check_output(['systemctl', '--user', 'show', 'qwen36.scope',
+        record['scope_limits'] = subprocess.check_output(['systemctl', '--user', 'show', SCOPE + '.scope',
             '-p', 'MemoryHigh', '-p', 'MemoryMax', '-p', 'MemorySwapMax', '-p', 'ControlGroup'], text=True)
         print('LOADED', json.dumps(record), flush=True)
         if args.smoke:
@@ -125,7 +134,7 @@ def main():
             (out / 'response.json').write_text(json.dumps(response, indent=2))
             record['smoke_response'] = response
         else:
-            frozen = ROOT / 'logs' / 'prompt-8192.json'
+            frozen = ROOT / 'prompt-8192.json'
             if args.prompt_file:
                 tokens = json.loads(args.prompt_file.read_text())[:args.prompt_size]
             elif frozen.exists() and args.prompt_size <= 8192:
@@ -182,7 +191,7 @@ def main():
     except Exception as exc:
         record['error'] = repr(exc)
     finally:
-        record['scope_memory'] = subprocess.run(['systemctl', '--user', 'show', 'qwen36.scope',
+        record['scope_memory'] = subprocess.run(['systemctl', '--user', 'show', SCOPE + '.scope',
             '-p', 'MemoryPeak', '-p', 'MemoryCurrent', '-p', 'Result'], capture_output=True, text=True).stdout
         stop()
         if process:

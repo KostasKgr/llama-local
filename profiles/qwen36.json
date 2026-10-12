@@ -1,0 +1,17 @@
+{
+  "runtime": "b11433-cuda12.8",
+  "model": "qwen36-35b-a3b/IQ3_S/Qwen3.6-35B-A3B-IQ3_S-00001-of-00002.gguf",
+  "context": 131072,
+  "batch": 4096,
+  "ubatch": 2048,
+  "cache_k": "f16",
+  "cache_v": "f16",
+  "spec": "draft-dflash",
+  "draft_max": 8,
+  "alias": "qwen3.6-35b-a3b-iq3s-dflash",
+  "load_mode": "dio",
+  "port": 1235,
+  "scope": "qwen36",
+  "fit_off": true,
+  "draft": "qwen36-35b-a3b/dflash-Qwen3.6-35B-A3B-Q8_0.gguf"
+}

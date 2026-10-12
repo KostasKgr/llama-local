@@ -6,15 +6,17 @@ import time
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-ROOT = Path(__file__).resolve().parent
+REPO = Path(__file__).resolve().parent.parent
+import sys
+sys.path.insert(0, str(REPO))
+from lib import core, probes
+ROOT = REPO / 'logs' / 'swift15'
+ROOT.mkdir(parents=True, exist_ok=True)
 BASE = "http://127.0.0.1:1235"
 
 
 def post(route, payload):
-    request = Request(BASE + route, json.dumps(payload).encode(),
-                      headers={"Content-Type": "application/json"})
-    with urlopen(request, timeout=900) as response:
-        return json.load(response)
+    return probes.request(BASE, route, payload, 900)
 
 
 def main():
@@ -60,9 +62,9 @@ def main():
                   "sample": "".join(content)[:300]}
         results.append(result)
         print(json.dumps(result), flush=True)
-        (ROOT / f"logs/benchmark-{args.label}.json").write_text(json.dumps(results, indent=2))
+        (ROOT / f"benchmark-{args.label}.json").write_text(json.dumps(results, indent=2))
         with urlopen(BASE + "/metrics", timeout=10) as response:
-            (ROOT / f"logs/metrics-{args.label}-{count}.txt").write_bytes(response.read())
+            (ROOT / f"metrics-{args.label}-{count}.txt").write_bytes(response.read())
 
 
 if __name__ == "__main__":

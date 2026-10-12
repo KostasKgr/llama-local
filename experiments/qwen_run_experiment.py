@@ -5,13 +5,18 @@ from pathlib import Path
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parent
+REPO = Path(__file__).resolve().parent.parent
+import sys
+sys.path.insert(0, str(REPO))
+from lib import core, probes
+ROOT = REPO / 'logs' / 'qwen36'
+ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def trial(label, *options):
-    path = ROOT / 'logs' / label / 'result.json'
+    path = ROOT / label / 'result.json'
     if not path.exists():
-        subprocess.run([sys.executable, str(ROOT / 'benchmark.py'), '--label', label, *map(str, options)],
+        subprocess.run([sys.executable, str(REPO / 'experiments/qwen_benchmark.py'), '--label', label, *map(str, options)],
                        check=False)
     if not path.exists():
         raise RuntimeError(f'Trial {label} did not save a result; inspect before resuming')
@@ -56,7 +61,7 @@ def main():
         'prefill_trial': best_prefill['label'], 'decode_trial': best_decode['label'],
         'selection_rule': 'Highest prefill with decode >=90% of ub1024; then highest decode, excluding clamped duplicate',
         'single_run_selection': True}
-    (ROOT / 'logs/selection.json').write_text(json.dumps(selection, indent=2) + '\n')
+    (ROOT / 'selection.json').write_text(json.dumps(selection, indent=2) + '\n')
     print('SELECTED', json.dumps(selection), flush=True)
     near32 = trial(f'dflash-32k-28kprompt-ub{ub}-d{draft}', '--ubatch', ub, '--draft-max', draft,
                    '--prompt-size', 28672)

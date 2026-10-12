@@ -12,29 +12,33 @@ import threading
 import time
 from urllib.request import Request, urlopen
 
-ROOT = Path(__file__).resolve().parent
+REPO = Path(__file__).resolve().parent.parent
+import sys
+sys.path.insert(0, str(REPO))
+from lib import core, probes
+ROOT = REPO / 'logs' / 'swift15'
+ROOT.mkdir(parents=True, exist_ok=True)
+import uuid
+SCOPE = 'swift15-trial-' + uuid.uuid4().hex
+os.environ['LLAMA_SCOPE'] = SCOPE
 BASE = 'http://127.0.0.1:1235'
 MATRIX = [(2048, 512), (4096, 1024), (4096, 2048), (8192, 2048)]
 
 
 def post(route, payload):
-    with urlopen(Request(BASE + route, json.dumps(payload).encode(),
-                         headers={'Content-Type': 'application/json'}), timeout=900) as r:
-        return json.load(r)
+    return probes.request(BASE, route, payload, 900)
 
 
+gpu = probes.gpu
+
+OWNED = False
 def stop():
-    subprocess.run(['systemctl', '--user', 'stop', 'swift15.scope'],
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
-def gpu():
-    raw = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.used,memory.free,temperature.gpu,power.draw',
-                                   '--format=csv,noheader,nounits'], text=True)
-    return [float(x.strip()) for x in raw.splitlines()[0].split(',')]
+    if OWNED:
+        probes.stop(SCOPE)
 
 
 def main():
+    global OWNED
     def interrupted(signum, frame):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, interrupted)
@@ -46,6 +50,7 @@ def main():
     parser.add_argument('--ubatch', type=int, default=1024, help='microbatch for --mtp-only')
     parser.add_argument('--prompt-tokens', type=Path, help='reuse a saved 50K token array')
     args = parser.parse_args()
+    core.preflight(core.load('swift15'))
     if args.repeats < 1:
         parser.error('--repeats must be positive')
     # Refuse to interrupt an unrelated existing listener.
@@ -55,11 +60,11 @@ def main():
         pass
     else:
         raise RuntimeError('Port 1235 already has a server; stop it before benchmarking')
-    out = args.output or ROOT / 'logs' / time.strftime('prefill-%Y%m%d-%H%M%S')
+    out = args.output or ROOT / time.strftime('prefill-%Y%m%d-%H%M%S')
     out.mkdir(parents=True, exist_ok=False)
     metadata = {'workload': 'synthetic varied Python service modules; not a production trace',
                 'prompt_tokens': 50000, 'repeats': args.repeats,
-                'launcher': (ROOT / 'start_swift15_iq3s_128k.sh').read_text(),
+                'launcher': (REPO / 'start_swift15_iq3s_128k.sh').read_text(),
                 'environment': subprocess.check_output(['nvidia-smi'], text=True)}
     (out / 'metadata.json').write_text(json.dumps(metadata, indent=2))
     results, tokens = [], None
@@ -78,9 +83,13 @@ def main():
 
     def run(batch, ubatch, mtp, repeat):
         nonlocal tokens
+        global OWNED
         label = f'b{batch}-ub{ubatch}-{"mtp" if mtp else "none"}-{repeat}'
         record = {'label': label, 'batch': batch, 'ubatch': ubatch, 'mtp': mtp,
                   'repeat': repeat, 'stable': False}
+        record['resolved'] = core.snapshot('swift15')
+        record['resolved']['profile'] = core.load('swift15', {'batch': batch, 'ubatch': ubatch, 'spec': 'draft-mtp' if mtp else 'none', 'context': 131072})
+        record['resolved']['command'] = core.command(record['resolved']['profile'])
         results.append(record)
         env = dict(os.environ, SWIFT_BATCH=str(batch), SWIFT_UBATCH=str(ubatch),
                    SWIFT_SPEC_TYPE='draft-mtp' if mtp else 'none', SWIFT_CONTEXT='131072')
@@ -102,8 +111,9 @@ def main():
         thread = None
         try:
             with (out / f'{label}-server.log').open('w') as log:
-                process = subprocess.Popen([str(ROOT / 'start_swift15_iq3s_128k.sh')],
+                process = subprocess.Popen([str(REPO / 'start_swift15_iq3s_128k.sh')],
                                            env=env, stdout=log, stderr=subprocess.STDOUT)
+                OWNED = True
             deadline = time.monotonic() + 240
             while True:
                 if process.poll() is not None:
@@ -183,7 +193,7 @@ def main():
                 record['sampled_min_free_mib'] = min(v[1] for v in samples)
                 record['max_temperature_c'] = max(v[2] for v in samples)
             record['scope_memory'] = subprocess.run(
-                ['systemctl', '--user', 'show', 'swift15.scope', '-p', 'MemoryPeak',
+                ['systemctl', '--user', 'show', SCOPE + '.scope', '-p', 'MemoryPeak',
                  '-p', 'MemoryCurrent', '-p', 'Result'], capture_output=True, text=True).stdout
             stop()
             if process:
@@ -227,6 +237,8 @@ def main():
     finally:
         stop()
     print('Artifacts:', out, flush=True)
+    if not results or not any(r['stable'] for r in results):
+        raise SystemExit('No successful trials; inspect results and server logs')
 
 
 if __name__ == '__main__':

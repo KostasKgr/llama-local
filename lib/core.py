@@ -1,5 +1,6 @@
 """Pinned local llama.cpp installation and managed server lifecycle."""
 import ctypes
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -42,9 +43,11 @@ def load(name, overrides=None):
 
 def command(p):
     server = ROOT / 'runtimes' / p['runtime'] / 'llama-server'
+    # OpenCode thread naming can displace the main prompt and cause cache thrashing;
+    # reserve 2 GiB of RAM cache for both profiles to retain displaced prompt states.
     args = [str(server), '-m', str(ROOT / 'models' / p['model']), '--load-mode', p['load_mode'],
             '-ngl', '999', '-fa', 'on', '-c', str(p['context']), '-np', '1',
-            '-b', str(p['batch']), '-ub', str(p['ubatch']), '--ctx-checkpoints', '2', '--cache-ram', '512',
+            '-b', str(p['batch']), '-ub', str(p['ubatch']), '--ctx-checkpoints', '16', '--cache-ram', '2048',
             '--cache-type-k', p['cache_k'], '--cache-type-v', p['cache_v'], '--spec-type', p['spec'],
             '--host', '127.0.0.1', '--port', str(p['port']), '--jinja', '--alias', p['alias'],
             '--metrics', '--perf', '--log-verbosity', '4']
@@ -84,8 +87,14 @@ def start(p):
     preflight(p)
     env = dict(os.environ)
     env['LD_LIBRARY_PATH'] = str(ROOT / 'runtimes' / p['runtime']) + (':' + env['LD_LIBRARY_PATH'] if env.get('LD_LIBRARY_PATH') else '')
+    profile = p['scope'].split('-trial-', 1)[0]
+    log_dir = ROOT / 'logs' / profile / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
+    log_dir.mkdir(parents=True, exist_ok=False)
     args = ['systemd-run', '--user', '--scope', '--unit=' + p['scope'], '--collect',
-            '-p', 'MemoryHigh=6G', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0'] + command(p)
+            '-p', 'MemoryHigh=6G', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
+            'bash', '-c', 'set -o pipefail; log=$1; shift; "$@" 2>&1 | tee -- "$log"',
+            'llama-log', str(log_dir / 'server.log')] + command(p)
+    print('Server log:', log_dir / 'server.log', flush=True)
     print(json.dumps(p, indent=2), flush=True)
     os.execvpe(args[0], args, env)
 

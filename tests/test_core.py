@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import socket
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -8,6 +9,26 @@ from lib import core
 
 
 class CoreTests(unittest.TestCase):
+    def test_start_captures_both_streams_and_preserves_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p = core.load('swift15')
+            command = ['bash', '-c', 'echo output; echo error >&2; exit 7']
+            def execute(file, args, env):
+                # Exercise the actual logging pipeline without starting a GPU server.
+                result = subprocess.run(args[args.index('bash'):], env=env,
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 7)
+                self.assertEqual(result.stdout, 'output\nerror\n')
+            with patch.object(core, 'ROOT', Path(temp)), patch.object(core, 'preflight'), \
+                    patch.object(core, 'command', return_value=command), \
+                    patch('lib.core.os.execvpe', side_effect=execute):
+                core.start(p)
+                core.start(p)
+            logs = list((Path(temp) / 'logs' / 'swift15').glob('*/server.log'))
+            self.assertEqual(len(logs), 2)
+            for log in logs:
+                self.assertEqual(log.read_text(), 'output\nerror\n')
+
     def test_preserved_profiles(self):
         for name, runtime, spec, batch, ubatch, kv in [
             ('swift15', 'b11393-cuda12.8', 'draft-mtp', 2048, 512, 'q8_0'),

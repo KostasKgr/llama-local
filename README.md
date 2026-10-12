@@ -33,7 +33,9 @@ is available through the explicit command below.
 | qwen36 | b11433 | 131072 | f16/f16 | 4096/2048 | separate DFlash, max 8 |
 
 Both retain full layer offload, Flash Attention, one slot, Direct I/O loading,
-two checkpoints and 512 MiB RAM prompt cache. Scopes use MemoryHigh=6G,
+two checkpoints and 2 GiB RAM prompt cache. OpenCode thread naming can displace
+the main prompt and cause cache thrashing when the RAM cache is too small.
+Scopes use MemoryHigh=6G,
 MemoryMax=8G and MemorySwapMax=0; these limits apply to host RAM, not VRAM.
 Qwen retains `--fit off`. Runtime upgrades require independent model validation.
 
@@ -89,6 +91,12 @@ presence; run verification after supplying/replacing files yourself.
 Weights, versioned runtimes, downloads and logs are ignored by Git. Installation
 diagnostics live under each runtime as `installation.json`. Qwen's two shards
 must remain adjacent with their original filenames. The first is passed to `-m`.
+
+Every server launch saves combined stdout/stderr to
+`logs/<profile>/<UTC-timestamp>/server.log` and prints the path at startup.
+Output remains visible in the terminal (or in the caller's redirected output),
+including existing performance statistics. Logs are kept until manually deleted;
+there is no automatic rotation, pruning, or separate launch metadata file.
 
 ## Probes and historical results
 

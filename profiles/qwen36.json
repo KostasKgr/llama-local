@@ -13,5 +13,20 @@
   "port": 1235,
   "scope": "qwen36",
   "fit_off": true,
-  "draft": "qwen36-35b-a3b/dflash-Qwen3.6-35B-A3B-Q8_0.gguf"
+  "draft": "qwen36-35b-a3b/dflash-Qwen3.6-35B-A3B-Q8_0.gguf",
+  "opencode": {
+    "name": "Qwen3.6 35B A3B IQ3_S DFlash (128K)",
+    "output_tokens": 8192,
+    "reasoning": true,
+    "temperature": true,
+    "tool_call": true,
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    }
+  }
 }

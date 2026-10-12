@@ -5,7 +5,7 @@ import json
 import shlex
 import subprocess
 import sys
-from lib import core
+from lib import core, opencode
 
 
 def main():
@@ -18,7 +18,20 @@ def main():
             cmd.add_argument('--dry-run', action='store_true')
             for key, cast in core.FIELDS.items():
                 cmd.add_argument('--' + key.replace('_', '-'), type=cast)
+    oc = sub.add_parser('opencode', help='Manage OpenCode model registration')
+    oc_sub = oc.add_subparsers(dest='opencode_action', required=True)
+    add = oc_sub.add_parser('add')
+    add.add_argument('profile', choices=('swift15', 'qwen36'))
+    add.add_argument('--config', default='~/.config/opencode/opencode.jsonc')
+    add.add_argument('--dry-run', action='store_true')
+    add.add_argument('--update', action='store_true')
+    for key in ('context', 'port', 'output-tokens'):
+        add.add_argument('--' + key, type=int)
     args = parser.parse_args()
+    if args.action == 'opencode':
+        opencode.add(args.profile, args.config, args.dry_run, args.update,
+                     args.context, args.port, args.output_tokens)
+        return
     if args.action == 'status':
         for name in [args.profile] if args.profile else ['swift15', 'qwen36']:
             p = core.load(name)

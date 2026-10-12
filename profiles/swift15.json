@@ -12,5 +12,37 @@
   "load_mode": "dio",
   "port": 1235,
   "scope": "swift15",
-  "fit_off": false
+  "fit_off": false,
+  "opencode": {
+    "name": "Swift 1.5 Qwen 3.8 27B IQ3_S MTP (128K)",
+    "output_tokens": 8192,
+    "reasoning": true,
+    "temperature": true,
+    "tool_call": true,
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "options": {
+      "reasoningEffort": "xhigh"
+    },
+    "variants": {
+      "none": {
+        "reasoningEffort": "none"
+      },
+      "low": {
+        "reasoningEffort": "low"
+      },
+      "medium": {
+        "reasoningEffort": "medium"
+      },
+      "xhigh": {
+        "reasoningEffort": "xhigh"
+      }
+    }
+  }
 }

@@ -24,8 +24,8 @@ Only one profile can use the default port at a time. Start refuses an occupied
 port or active profile scope. Servers bind `127.0.0.1:1235`; API base is
 `http://127.0.0.1:1235/v1`. Existing model aliases are preserved:
 `swift-1.5-qwen3.8-27b-iq3s-mtp` and `qwen3.6-35b-a3b-iq3s-dflash`.
-Client configurations remain external; point clients at that endpoint and select
-the alias for the running profile. No client configuration was changed.
+Select the alias for the running profile in your client. OpenCode registration
+is available through the explicit command below.
 
 | Profile | Runtime | Context | KV | Batch/microbatch | Speculation |
 | --- | --- | ---: | --- | --- | --- |
@@ -42,6 +42,41 @@ Start overrides: `--context`, `--batch`, `--ubatch`, `--draft-max`, `--spec`,
 over the legacy `SWIFT_*` / `QWEN_*` environment variables, which take precedence
 over profiles. `SWIFT_SPEC_TYPE` and `QWEN_SPEC_TYPE` are supported.
 `start_swift15_iq3s_128k.sh` and `start_qwen36.sh` remain compatibility entrypoints.
+
+## OpenCode registration
+
+```bash
+python3 llama.py opencode add qwen36 --dry-run
+python3 llama.py opencode add qwen36
+python3 llama.py opencode add swift15
+opencode models llama.cpp
+```
+
+The command adds the profile alias under `provider["llama.cpp"].models` in
+`~/.config/opencode/opencode.jsonc`. It does not start a server or select a default
+model. Both models may be listed; start the matching profile before using it.
+Registration requires neither GPU access nor installed weights.
+
+`--config PATH` targets another config. `--context`, `--port` and
+`--output-tokens` match launch overrides and customize advertised limits; they
+do not change the server. Output defaults to 8192 tokens. Context and port also
+honor the existing profile environment overrides. Display names describe the
+profile's default context; the numeric `limit.context` reflects overrides.
+
+JSONC comments, trailing commas and unrelated text are preserved. Identical
+registration is a no-op. Missing fields are added, existing custom fields and
+variants are retained, and conflicting managed fields require `--update`.
+`--update` replaces only those conflicting fields. Changing the provider's
+baseURL affects every model under `llama.cpp`, so use it only when all registered
+models should use that endpoint. Use a separate config for independent endpoints.
+Swift retains its current reasoning options/variants. Qwen has text, reasoning,
+temperature and tool-call metadata but no unvalidated reasoning-effort options.
+
+Every actual edit prints a diff, saves a uniquely named backup beside the original
+config, and replaces it atomically while preserving permissions. Invalid JSONC,
+duplicate keys and detected concurrent edits cause refusal. `--dry-run` writes
+nothing, including backups and directories. Only the selected config is edited;
+there is no chezmoi integration. To undo an edit, restore the printed backup.
 
 ## Artifacts
 

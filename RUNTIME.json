@@ -1,0 +1,6 @@
+{
+  "version": "version: 0.6.0-dev (build 11433, commit 50569eb87)\nbuilt with GNU 13.3.0 for Linux x86_64\n",
+  "devices": "Available devices:\n  CUDA0: NVIDIA GeForce RTX 5090 Laptop GPU (24462 MiB, 23119 MiB free)\n",
+  "cuda_runtime_version": 12080,
+  "llama_server_sha256": "a2bd95e075b90541548148538e02436d521da7306e56f2a305df89c4d5e52a7d"
+}

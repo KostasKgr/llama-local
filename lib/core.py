@@ -47,7 +47,7 @@ def command(p):
     # reserve 2 GiB of RAM cache for both profiles to retain displaced prompt states.
     args = [str(server), '-m', str(ROOT / 'models' / p['model']), '--load-mode', p['load_mode'],
             '-ngl', '999', '-fa', 'on', '-c', str(p['context']), '-np', '1',
-            '-b', str(p['batch']), '-ub', str(p['ubatch']), '--ctx-checkpoints', '16', '--cache-ram', '2048',
+            '-b', str(p['batch']), '-ub', str(p['ubatch']), '--ctx-checkpoints', '2', '--cache-ram', '2048',
             '--cache-type-k', p['cache_k'], '--cache-type-v', p['cache_v'], '--spec-type', p['spec'],
             '--host', '127.0.0.1', '--port', str(p['port']), '--jinja', '--alias', p['alias'],
             '--metrics', '--perf', '--log-verbosity', '4']

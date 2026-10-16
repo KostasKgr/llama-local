@@ -40,5 +40,19 @@
       "sha256": "ab3eda89a82096bcba00b6448218c3c11eec2016b0f38d64884dc29736549f26",
       "size": 594377811
     }
+  ],
+  "prism-b10777-e3de715-cuda12.8": [
+    {
+      "file": "llama-prism-b10777-e3de715-bin-linux-cuda-12.8-x64.tar.gz",
+      "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b10777-e3de715/llama-prism-b10777-e3de715-bin-linux-cuda-12.8-x64.tar.gz",
+      "sha256": "aa53e2256276e683386effdc8be34b3bd1cdf64ef9dc5d492da69227ac52531b",
+      "size": 208198074
+    },
+    {
+      "file": "cudart-llama-b11669-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/cudart-llama-b11669-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "sha256": "ab3eda89a82096bcba00b6448218c3c11eec2016b0f38d64884dc29736549f26",
+      "size": 594377811
+    }
   ]
 }

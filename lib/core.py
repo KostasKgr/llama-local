@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parent.parent
 PROFILES = {'swift15': ('SWIFT', 'draft-mtp'),
             'qwen36': ('QWEN', 'draft-dflash'),
             'lfm25': ('LFM', 'none'),
-            'bonsai2': ('BONSAI', 'none')}
+            'bonsai2': ('BONSAI', 'none'),
+            'bonsai2mtp': ('BONSAI_MTP', 'draft-mtp')}
 FIELDS = {'context': int, 'batch': int, 'ubatch': int, 'draft_max': int, 'port': int,
           'cache_k': str, 'cache_v': str, 'load_mode': str, 'spec': str}
 
@@ -67,6 +68,9 @@ def command(p):
                 args += [flag, str(sampling[key])]
     if p['spec'] != 'none':
         args += ['--spec-draft-n-max', str(p['draft_max'])]
+        for key, flag in [('draft_min', '--spec-draft-n-min'), ('draft_p_min', '--spec-draft-p-min')]:
+            if key in p:
+                args += [flag, str(p[key])]
         if p['spec'] == 'draft-dflash':
             args += ['-md', str(ROOT / 'models' / p['draft']), '-ngld', '999']
     return args
@@ -150,7 +154,8 @@ def install(name):
     runtime.mkdir(parents=True, exist_ok=True)
     for path in archives:
         with tarfile.open(path) as archive:
-            members = archive.getmembers()
+            # Prism archives include a harmless root-directory entry before the single top-level folder.
+            members = [m for m in archive.getmembers() if m.name not in ('.', './')]
             tops = {m.name.split('/')[0] for m in members}
             if len(tops) != 1 or any(m.name.startswith('/') or '..' in Path(m.name).parts for m in members):
                 raise ValueError('Unexpected archive structure')

@@ -4,6 +4,7 @@ One WSL/Linux repository for Swift 1.5 IQ3_S MTP, Qwen3.6 IQ3_S DFlash,
 LFM2.5 24B A2B NVFP4, and Ternary Bonsai 2 9B Q2_0 (the latter two without speculation).
 Each profile pins its own tested llama.cpp CUDA 12.8 prebuilt runtime. No source
 build, CUDA toolkit installation, or driver changes are required.
+An optional Bonsai MTP profile uses the PrismML fork and an embedded prediction head.
 
 Requirements: Python 3.12+, curl, working NVIDIA GPU passthrough, systemd user
 manager and cgroup v2. Tested on an RTX 5090 Laptop GPU with 24 GB VRAM.
@@ -23,6 +24,9 @@ python3 llama.py start qwen36
 # Bonsai shortcut (128K context, upstream runtime):
 python3 llama.py install bonsai2
 ./start_bonsai2.sh
+# Bonsai MTP (128K context, Prism runtime):
+python3 llama.py install bonsai2mtp
+./start_bonsai2_mtp.sh
 ```
 
 Only one profile can use the default port at a time. Start refuses an occupied
@@ -38,6 +42,7 @@ is available through the explicit command below.
 | qwen36 | b11433 | 131072 | f16/f16 | 4096/2048 | separate DFlash, max 8 |
 | lfm25 | b11433 | 131072 | f16/f16 | 4096/1024 | none; no embedded MTP |
 | bonsai2 | b11669 | 131072 | f16/f16 | 2048/512 | none |
+| bonsai2mtp | prism-b10777-e3de715 | 131072 | f16/f16 | 2048/512 | embedded MTP, max 2 |
 
 All profiles use full layer offload, Flash Attention, one slot, Direct I/O loading,
 two checkpoints and 2 GiB RAM prompt cache. OpenCode thread naming can displace
@@ -63,6 +68,22 @@ These are initial settings for evaluation, not measured performance defaults.
 Bonsai uses `--fit off` and the `BONSAI_*` environment prefix. Stop it with
 `python3 llama.py stop bonsai2`.
 
+The separate `bonsai2mtp` profile pins PrismML's `prism-b10777-e3de715`
+(commit `e3de715222b2667c54a267441159a5729f11155e`), the release pinned by
+[Bonsai-demo](https://github.com/PrismML-Eng/Bonsai-demo).
+Install downloads `Ternary-Bonsai-2-9B-PQ2_0-MTP-Q8_0.gguf` from
+[the model repository](https://huggingface.co/prism-ml/Ternary-Bonsai-2-9B-gguf),
+with the exact revision, size and SHA-256 in `manifests/models.json`.
+The single GGUF includes the language model and MTP head; no separate draft model
+or vision projector is needed. The Prism binary archive is paired with the pinned
+upstream CUDA 12.8 library archive because Prism's Linux archive omits CUDA libraries.
+It uses the same context, f16 KV cache and sampling as `bonsai2`, with draft depth 2,
+minimum draft length 0 and minimum draft probability 0, following the model card.
+OpenCode alias: `ternary-bonsai-2-9b-pq2_0-mtp` (128K context, 8192 output tokens).
+Use `./start_bonsai2_mtp.sh`, then select that alias in OpenCode; stop with
+`python3 llama.py stop bonsai2mtp`. Overrides use `BONSAI_MTP_*`; `--spec none`
+disables MTP for comparisons. The upstream `bonsai2` profile remains available.
+
 Start overrides: `--context`, `--batch`, `--ubatch`, `--draft-max`, `--spec`,
 `--cache-k`, `--cache-v`, `--load-mode`, `--port`. CLI overrides take precedence
 over the legacy `SWIFT_*` / `QWEN_*` environment variables, which take precedence
@@ -78,6 +99,7 @@ python3 llama.py opencode add qwen36
 python3 llama.py opencode add swift15
 python3 llama.py opencode add lfm25
 python3 llama.py opencode add bonsai2
+python3 llama.py opencode add bonsai2mtp
 opencode models
 ```
 
@@ -137,6 +159,7 @@ python3 llama.py smoke swift15
 python3 llama.py smoke qwen36
 python3 llama.py smoke lfm25
 python3 llama.py smoke bonsai2
+python3 llama.py smoke bonsai2mtp
 python3 experiments/lfm_benchmark.py
 python3 experiments/swift_prefill_benchmark.py --repeats 1
 python3 experiments/qwen_benchmark.py --label screening --smoke
@@ -177,7 +200,7 @@ consolidated Git history until rollback has been verified.
 ```bash
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q llama.py lib experiments tests
-bash -n start_swift15_iq3s_128k.sh start_qwen36.sh start_bonsai2.sh
+bash -n start_swift15_iq3s_128k.sh start_qwen36.sh start_bonsai2.sh start_bonsai2_mtp.sh
 git diff --check
 ```
 

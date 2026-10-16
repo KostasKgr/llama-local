@@ -1,0 +1,43 @@
+{
+  "runtime": "prism-b10777-e3de715-cuda12.8",
+  "model": "bonsai2mtp/Ternary-Bonsai-2-9B-PQ2_0-MTP-Q8_0.gguf",
+  "context": 131072,
+  "batch": 2048,
+  "ubatch": 512,
+  "cache_k": "f16",
+  "cache_v": "f16",
+  "spec": "draft-mtp",
+  "draft_max": 2,
+  "alias": "ternary-bonsai-2-9b-pq2_0-mtp",
+  "load_mode": "dio",
+  "port": 1235,
+  "scope": "bonsai2mtp",
+  "fit_off": true,
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "min_p": 0.0,
+    "presence_penalty": 1.0,
+    "repeat_penalty": 1.0,
+    "repeat_last_n": 64
+  },
+  "opencode": {
+    "name": "Ternary Bonsai 2 9B PQ2_0 MTP (128K)",
+    "output_tokens": 8192,
+    "reasoning": true,
+    "temperature": true,
+    "tool_call": true,
+    "variants": {},
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    }
+  },
+  "draft_min": 0,
+  "draft_p_min": 0.0
+}

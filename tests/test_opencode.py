@@ -80,6 +80,16 @@ class OpenCodeTests(unittest.TestCase):
         self.assertEqual(model['variants'], [])
         self.assertEqual(opencode.merge(result, p), result)
 
+    def test_bonsai_mtp_keeps_upstream_entry(self):
+        upstream = core.load('bonsai2')
+        source = opencode.merge('{}', upstream)
+        p = core.load('bonsai2mtp')
+        result = opencode.merge(source, p)
+        models = jsonc.parse(result).value['providers']['llama.cpp']['models']
+        self.assertEqual(models[upstream['alias']], opencode.model_config(upstream))
+        self.assertEqual(models[p['alias']]['limit'], {'context': 131072, 'output': 8192})
+        self.assertEqual(models[p['alias']]['variants'], [])
+
     def test_swift_options_and_override_precedence(self):
         p = core.load('swift15', {'context': 65536})
         result = opencode.merge('{}', p, output_tokens=4096)

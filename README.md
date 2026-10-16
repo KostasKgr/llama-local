@@ -150,6 +150,91 @@ Output remains visible in the terminal (or in the caller's redirected output),
 including existing performance statistics. Logs are kept until manually deleted;
 there is no automatic rotation, pruning, or separate launch metadata file.
 
+## Adding a model
+
+Add each model or runtime variant as a separate profile. Keep existing profiles'
+runtime pins and measured defaults unchanged. Start from `profiles/bonsai2.json`
+for ordinary decoding or `profiles/bonsai2mtp.json` for an embedded MTP head.
+The steps below use `newmodel` as the new profile name; replace it throughout.
+
+1. **Check compatibility and pin artifacts.** Confirm that the chosen runtime
+   supports the architecture, tensor types, activation transforms, chat template
+   and intended speculation mode. A GGUF loading successfully does not prove
+   correct inference. Add `newmodel` to `manifests/models.json`, listing every
+   required file with a path relative to `models/`, an immutable download URL,
+   SHA-256 and byte size. Pin Hugging Face URLs to a commit revision. Include all
+   shards and any separate draft model; preserve shard filenames and adjacency.
+   Reuse a validated runtime or add a separate key in `manifests/runtimes.json`
+   with release-specific URLs, hashes and sizes. Include compatible CUDA libraries
+   when the binary archive omits them. The current installer expects tar archives
+   with one top-level folder and a CUDA 12 runtime; other layouts or backends
+   require explicit installer changes.
+
+2. **Create `profiles/newmodel.json`.** Set the runtime key, model path relative
+   to `models/`, unique API alias, scope equal to `newmodel`, port, context,
+   batch/microbatch sizes, KV types, load mode and `fit_off`. Start with settings
+   supported by the model and GPU; label unmeasured settings as provisional.
+   Use `spec: "none"` unless speculation has been explicitly chosen. `draft_max`
+   must remain positive even with speculation disabled. Embedded MTP uses
+   `draft-mtp`; a separate DFlash model uses `draft-dflash` plus `draft`.
+   Optional `draft_min` and `draft_p_min` apply only when speculation is enabled.
+   If adding `sampling`, include `temperature`, `top_k` and `repeat_penalty`;
+   optional supported fields are `top_p`, `min_p`, `presence_penalty` and
+   `repeat_last_n`.
+
+3. **Register the profile in code.** Add a `core.PROFILES` entry in `lib/core.py`,
+   such as `'newmodel': ('NEWMODEL', 'none')`. The tuple defines its environment
+   prefix and allowed speculation mode; `none` is always allowed. CLI choices
+   come from this registry, so a JSON file alone is insufficient. Check
+   `command()` and `preflight()` for model-specific assumptions: separate DFlash
+   shard checks currently refer to Qwen explicitly. Extend those paths and tests
+   when the new profile needs them. An optional executable `start_newmodel.sh`
+   can follow `start_bonsai2.sh` and forward arguments to `llama.py start newmodel`.
+
+4. **Describe OpenCode capabilities.** Populate the profile's `opencode` object
+   using an existing profile as the schema. Set a display name, `output_tokens`
+   within the configured context, `tool_call`, and input/output `modalities`.
+   Advertise only verified capabilities. Use `variants: {}` in the profile to
+   generate `variants: []` in OpenCode and suppress inferred effort presets.
+   Add `options` or named variants only after verifying the model/runtime accepts
+   those settings. Vision support needs launcher work; advertising an image
+   modality alone does not load a projector.
+
+5. **Validate and install.** Add tests for generated arguments, speculation
+   enable/disable behavior and OpenCode registration preserving existing models.
+   Run the commands in [Validation](#validation), including syntax checks for
+   any new launcher. Then install, verify and inspect the resolved configuration:
+
+   ```bash
+   python3 llama.py install newmodel
+   python3 llama.py verify newmodel
+   python3 llama.py start newmodel --dry-run
+   python3 llama.py opencode add newmodel --dry-run
+   ```
+
+6. **Run live checks and document the result.** When the GPU and port are free,
+   run `python3 llama.py smoke newmodel`. It starts a unique trial scope and stops
+   its own server. Adapt the smoke prompt or output allowance if the model needs
+   different reasoning behavior. Check correct output and tool-call formatting;
+   for speculation, confirm initialization and accepted draft tokens in the log.
+   Register with `python3 llama.py opencode add newmodel`, start the profile, and
+   test the actual client with the alias from the profile:
+
+   ```bash
+   opencode run --standalone --model llama.cpp/model-alias \
+     'Reply with exactly these two words and nothing else: hello world'
+   ```
+
+   Stop your server with `python3 llama.py stop newmodel` when finished. Run live
+   checks sequentially and never stop an unrelated server. Add the model filename,
+   runtime source, launch/stop commands, alias, limits and any compatibility notes
+   to this README. Speed measurements require a separate benchmark; a short smoke
+   response does not establish performance or coding quality.
+
+Before committing, inspect the diff and stage only intended code, profiles,
+manifests, tests and documentation. Weights, runtimes, downloads, logs, legacy
+archives and `HANDOFF.md` must remain outside Git.
+
 ## Probes and historical results
 
 Stop any existing server before fresh-process probes:

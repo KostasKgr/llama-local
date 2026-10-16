@@ -42,7 +42,9 @@ try:
     assert any(m['id'] == p['alias'] for m in record['models']['data'])
     record['response'] = probes.request(base, '/v1/chat/completions', {
         'model': p['alias'], 'messages': [{'role': 'user', 'content': 'What is 2 + 2? Answer with the number only.'}],
-        'max_tokens': 32, 'temperature': 0, 'chat_template_kwargs': {'enable_thinking': False}})
+        'max_tokens': 256 if name == 'lfm25' else 32,
+        **(p['sampling'] if name == 'lfm25' else {
+            'temperature': 0, 'chat_template_kwargs': {'enable_thinking': False}})})
     assert '4' in record['response']['choices'][0]['message']['content']
     record['scope'] = subprocess.check_output(['systemctl', '--user', 'show', p['scope'] + '.scope',
         '-p', 'MemoryHigh', '-p', 'MemoryMax', '-p', 'MemorySwapMax'], text=True)

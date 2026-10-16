@@ -1,4 +1,12 @@
 {
+  "lfm25": [
+    {
+      "file": "lfm25/lfm2.5-24b-a2b-nvfp4.gguf",
+      "url": "https://huggingface.co/WhiskyAKM/LFM2.5-24B-A2B-NVFP4-GGUF/resolve/1e9f2a188139a79d42a6a3533cf7b61d3778a3f8/lfm2.5-24b-a2b-nvfp4.gguf",
+      "sha256": "f29ed107747c75becc40e5bb68efad840bd14f59d72e39264a5f502ac6376483",
+      "size": 13578191136
+    }
+  ],
   "qwen36": [
     {
       "file": "qwen36-35b-a3b/IQ3_S/Qwen3.6-35B-A3B-IQ3_S-00001-of-00002.gguf",

@@ -1,6 +1,7 @@
 # Local llama.cpp inference
 
-One WSL/Linux repository for Swift 1.5 IQ3_S MTP and Qwen3.6 IQ3_S DFlash.
+One WSL/Linux repository for Swift 1.5 IQ3_S MTP, Qwen3.6 IQ3_S DFlash,
+and LFM2.5 24B A2B NVFP4 (without speculation).
 Each profile pins its own tested llama.cpp CUDA 12.8 prebuilt runtime. No source
 build, CUDA toolkit installation, or driver changes are required.
 
@@ -11,6 +12,7 @@ manager and cgroup v2. Tested on an RTX 5090 Laptop GPU with 24 GB VRAM.
 cd /projects/inference/llama-local
 python3 llama.py install swift15
 python3 llama.py install qwen36
+python3 llama.py install lfm25
 python3 llama.py verify swift15
 python3 llama.py start swift15 --dry-run
 python3 llama.py start swift15
@@ -31,18 +33,25 @@ is available through the explicit command below.
 | --- | --- | ---: | --- | --- | --- |
 | swift15 | b11393 | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
 | qwen36 | b11433 | 131072 | f16/f16 | 4096/2048 | separate DFlash, max 8 |
+| lfm25 | b11433 | 131072 | f16/f16 | 4096/1024 | none; no embedded MTP |
 
-Both retain full layer offload, Flash Attention, one slot, Direct I/O loading,
+All profiles use full layer offload, Flash Attention, one slot, Direct I/O loading,
 two checkpoints and 2 GiB RAM prompt cache. OpenCode thread naming can displace
 the main prompt and cause cache thrashing when the RAM cache is too small.
 Scopes use MemoryHigh=6G,
 MemoryMax=8G and MemorySwapMax=0; these limits apply to host RAM, not VRAM.
-Qwen retains `--fit off`. Runtime upgrades require independent model validation.
+Qwen and LFM use `--fit off`. Runtime upgrades require independent model validation.
+LFM uses alias `lfm2.5-24b-a2b-nvfp4` and a pinned WhiskyAKM GGUF conversion.
+Its native context limit and launch default are 131072. The model always reasons;
+no reasoning-effort variants are advertised. The profile explicitly sets the
+model page's temperature 0.1, top-k 50 and repetition penalty 1.05.
+NVFP4 activation precision follows runtime/model defaults; no forced W4A4 override.
 
 Start overrides: `--context`, `--batch`, `--ubatch`, `--draft-max`, `--spec`,
 `--cache-k`, `--cache-v`, `--load-mode`, `--port`. CLI overrides take precedence
 over the legacy `SWIFT_*` / `QWEN_*` environment variables, which take precedence
-over profiles. `SWIFT_SPEC_TYPE` and `QWEN_SPEC_TYPE` are supported.
+over profiles. LFM uses the `LFM_*` prefix, including `LFM_SPEC_TYPE=none`.
+`SWIFT_SPEC_TYPE` and `QWEN_SPEC_TYPE` are supported.
 `start_swift15_iq3s_128k.sh` and `start_qwen36.sh` remain compatibility entrypoints.
 
 ## OpenCode registration
@@ -51,17 +60,19 @@ over profiles. `SWIFT_SPEC_TYPE` and `QWEN_SPEC_TYPE` are supported.
 python3 llama.py opencode add qwen36 --dry-run
 python3 llama.py opencode add qwen36
 python3 llama.py opencode add swift15
+python3 llama.py opencode add lfm25
 opencode models llama.cpp
 ```
 
 The command adds the profile alias under `provider["llama.cpp"].models` in
 `~/.config/opencode/opencode.jsonc`. It does not start a server or select a default
-model. Both models may be listed; start the matching profile before using it.
+model. All profiles may be listed; start the matching profile before using it.
 Registration requires neither GPU access nor installed weights.
 
 `--config PATH` targets another config. `--context`, `--port` and
 `--output-tokens` match launch overrides and customize advertised limits; they
-do not change the server. Output defaults to 8192 tokens. Context and port also
+do not change the server. Output defaults to 8192 tokens for Swift/Qwen and
+15360 (15K) for LFM. Context and port also
 honor the existing profile environment overrides. Display names describe the
 profile's default context; the numeric `limit.context` reflects overrides.
 
@@ -105,6 +116,8 @@ Stop any existing server before fresh-process probes:
 ```bash
 python3 llama.py smoke swift15
 python3 llama.py smoke qwen36
+python3 llama.py smoke lfm25
+python3 experiments/lfm_benchmark.py
 python3 experiments/swift_prefill_benchmark.py --repeats 1
 python3 experiments/qwen_benchmark.py --label screening --smoke
 python3 experiments/qwen_run_experiment.py
@@ -148,5 +161,16 @@ bash -n start_swift15_iq3s_128k.sh start_qwen36.sh
 git diff --check
 ```
 
-Live smoke checks verify 128K loading, health, model alias, chat and scope limits.
+Live smoke checks verify each profile's default context loading, health, model
+alias, chat and scope limits.
 Performance experiments are explicit commands and do not run during unit tests.
+
+LFM's benchmark runs sequential fresh processes with a fixed 128K (131072)
+server context and 36K (36864) / 96K (98304) input prompts, three repeats each.
+Each synthetic Python prompt is followed by 512 generated tokens with EOS ignored,
+using the profile's recommended sampling settings and seed 42.
+It tokenizes through LFM itself and checks complete, uncached prompt evaluation.
+Results include prefill/decode rates, GPU telemetry and resolved commands under
+`logs/lfm25/benchmark-*/`. Override `--prompt-sizes`, `--repeats` or
+`--output-tokens` explicitly. These are speed probes, not coding-quality tests.
+Run another context manually with `python3 llama.py start lfm25 --context 36864`.

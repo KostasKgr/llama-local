@@ -13,7 +13,7 @@ def main():
     sub = parser.add_subparsers(dest='action', required=True)
     for action in ('install', 'verify', 'start', 'stop', 'status', 'smoke'):
         cmd = sub.add_parser(action)
-        cmd.add_argument('profile', choices=('swift15', 'qwen36'), nargs='?' if action == 'status' else None)
+        cmd.add_argument('profile', choices=core.PROFILES, nargs='?' if action == 'status' else None)
         if action == 'start':
             cmd.add_argument('--dry-run', action='store_true')
             for key, cast in core.FIELDS.items():
@@ -21,7 +21,7 @@ def main():
     oc = sub.add_parser('opencode', help='Manage OpenCode model registration')
     oc_sub = oc.add_subparsers(dest='opencode_action', required=True)
     add = oc_sub.add_parser('add')
-    add.add_argument('profile', choices=('swift15', 'qwen36'))
+    add.add_argument('profile', choices=core.PROFILES)
     add.add_argument('--config', default='~/.config/opencode/opencode.jsonc')
     add.add_argument('--dry-run', action='store_true')
     add.add_argument('--update', action='store_true')
@@ -33,7 +33,7 @@ def main():
                      args.context, args.port, args.output_tokens)
         return
     if args.action == 'status':
-        for name in [args.profile] if args.profile else ['swift15', 'qwen36']:
+        for name in [args.profile] if args.profile else core.PROFILES:
             p = core.load(name)
             print(name, 'active' if core.scope_active(p) else 'inactive', 'port', p['port'])
         return

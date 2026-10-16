@@ -10,19 +10,22 @@ import subprocess
 import tarfile
 
 ROOT = Path(__file__).resolve().parent.parent
+PROFILES = {'swift15': ('SWIFT', 'draft-mtp'),
+            'qwen36': ('QWEN', 'draft-dflash'),
+            'lfm25': ('LFM', 'none')}
 FIELDS = {'context': int, 'batch': int, 'ubatch': int, 'draft_max': int, 'port': int,
           'cache_k': str, 'cache_v': str, 'load_mode': str, 'spec': str}
 
 
 def load(name, overrides=None):
-    if name not in ('swift15', 'qwen36'):
+    if name not in PROFILES:
         raise ValueError('Unknown profile')
     p = json.loads((ROOT / 'profiles' / f'{name}.json').read_text())
     scope = os.environ.get('LLAMA_SCOPE', name)
     if scope != name and not (scope.startswith(name + '-trial-') and all(c.isalnum() or c == '-' for c in scope)):
         raise ValueError('Invalid owned scope name')
     p['scope'] = scope
-    prefix = 'SWIFT' if name == 'swift15' else 'QWEN'
+    prefix, supported_spec = PROFILES[name]
     for key, cast in FIELDS.items():
         env_key = 'SPEC_TYPE' if key == 'spec' else key.upper()
         if f'{prefix}_{env_key}' in os.environ:
@@ -32,7 +35,7 @@ def load(name, overrides=None):
         raise ValueError('Context, batch, microbatch and draft maximum must be positive')
     if p['ubatch'] > p['batch'] or not 1 <= p['port'] <= 65535:
         raise ValueError('Invalid microbatch or port')
-    if p['spec'] not in ('none', 'draft-mtp' if name == 'swift15' else 'draft-dflash'):
+    if p['spec'] not in ('none', supported_spec):
         raise ValueError('Unsupported speculation for this profile')
     if p['load_mode'] not in ('auto', 'dio', 'mmap', 'mlock'):
         raise ValueError('Unsupported load mode')
@@ -53,6 +56,10 @@ def command(p):
             '--metrics', '--perf', '--log-verbosity', '4']
     if p['fit_off']:
         args += ['--fit', 'off']
+    if 'sampling' in p:
+        sampling = p['sampling']
+        args += ['--temp', str(sampling['temperature']), '--top-k', str(sampling['top_k']),
+                 '--repeat-penalty', str(sampling['repeat_penalty'])]
     if p['spec'] != 'none':
         args += ['--spec-draft-n-max', str(p['draft_max'])]
         if p['spec'] == 'draft-dflash':

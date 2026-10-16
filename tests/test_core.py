@@ -75,12 +75,30 @@ class CoreTests(unittest.TestCase):
                 active.assert_not_called()
 
     def test_manifests_include_all_model_files(self):
-        for name in ('swift15', 'qwen36'):
+        for name in core.PROFILES:
             p = core.load(name)
             files = {a['file'] for a in core.manifest('models')[name]}
             self.assertIn(p['model'], files)
             if 'draft' in p:
                 self.assertIn(p['draft'], files)
+
+    def test_lfm_without_draft_and_independent_overrides(self):
+        with patch.dict('os.environ', {'LFM_CONTEXT': '36864', 'QWEN_CONTEXT': '1024'}):
+            p = core.load('lfm25')
+            self.assertEqual(p['context'], 36864)
+            self.assertEqual(core.load('lfm25', {'context': 98304})['context'], 98304)
+        args = core.command(p)
+        self.assertEqual(args[args.index('--spec-type') + 1], 'none')
+        self.assertNotIn('-md', args)
+        self.assertNotIn('--spec-draft-n-max', args)
+        self.assertEqual(args[args.index('--temp') + 1], '0.1')
+        self.assertEqual(args[args.index('--top-k') + 1], '50')
+        self.assertEqual(args[args.index('--repeat-penalty') + 1], '1.05')
+        for spec in ('draft-mtp', 'draft-dflash'):
+            with self.assertRaises(ValueError):
+                core.load('lfm25', {'spec': spec})
+        with patch.dict('os.environ', {'LLAMA_SCOPE': 'lfm25-trial-abc123'}):
+            self.assertEqual(core.load('lfm25')['scope'], 'lfm25-trial-abc123')
 
 
 if __name__ == '__main__':

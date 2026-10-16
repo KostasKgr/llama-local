@@ -37,23 +37,6 @@ class OpenCodeTests(unittest.TestCase):
         result = opencode.merge(source, self.profile)
         self.assertEqual(jsonc.parse(result).value['providers']['llama.cpp']['name'], 'Custom')
 
-    def test_lfm_v2_registration_preserves_existing_models(self):
-        source = opencode.merge('{}', self.profile)
-        existing = jsonc.parse(source).value['providers']['llama.cpp']['models']
-        p = core.load('lfm25')
-        result = opencode.merge(source, p)
-        config = jsonc.parse(result).value
-        self.assertNotIn('provider', config)
-        provider = config['providers']['llama.cpp']
-        self.assertEqual(provider['package'], '@opencode/ai/providers/openai-compatible')
-        self.assertEqual(provider['models'][self.profile['alias']], existing[self.profile['alias']])
-        model = provider['models'][p['alias']]
-        self.assertEqual(model['limit'], {'context': 131072, 'output': 15360})
-        self.assertEqual(model['capabilities'], {'tools': True, 'input': ['text'], 'output': ['text']})
-        self.assertNotIn('reasoning', model)
-        self.assertNotIn('temperature', model)
-        self.assertEqual(opencode.merge(result, p), result)
-
     def test_conflicts_update_preserves_custom_fields(self):
         source = opencode.merge('{}', self.profile)
         path = ['providers', 'llama.cpp', 'models', self.profile['alias']]

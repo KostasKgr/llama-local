@@ -12,7 +12,6 @@ import tarfile
 ROOT = Path(__file__).resolve().parent.parent
 PROFILES = {'swift15': ('SWIFT', 'draft-mtp'),
             'qwen36': ('QWEN', 'draft-dflash'),
-            'lfm25': ('LFM', 'none'),
             'bonsai2': ('BONSAI', 'none'),
             'bonsai2mtp': ('BONSAI_MTP', 'draft-mtp')}
 FIELDS = {'context': int, 'batch': int, 'ubatch': int, 'draft_max': int, 'port': int,

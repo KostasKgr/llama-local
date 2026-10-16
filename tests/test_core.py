@@ -108,24 +108,6 @@ class CoreTests(unittest.TestCase):
             if 'draft' in p:
                 self.assertIn(p['draft'], files)
 
-    def test_lfm_without_draft_and_independent_overrides(self):
-        with patch.dict('os.environ', {'LFM_CONTEXT': '36864', 'QWEN_CONTEXT': '1024'}):
-            p = core.load('lfm25')
-            self.assertEqual(p['context'], 36864)
-            self.assertEqual(core.load('lfm25', {'context': 98304})['context'], 98304)
-        args = core.command(p)
-        self.assertEqual(args[args.index('--spec-type') + 1], 'none')
-        self.assertNotIn('-md', args)
-        self.assertNotIn('--spec-draft-n-max', args)
-        self.assertEqual(args[args.index('--temp') + 1], '0.1')
-        self.assertEqual(args[args.index('--top-k') + 1], '50')
-        self.assertEqual(args[args.index('--repeat-penalty') + 1], '1.05')
-        for spec in ('draft-mtp', 'draft-dflash'):
-            with self.assertRaises(ValueError):
-                core.load('lfm25', {'spec': spec})
-        with patch.dict('os.environ', {'LLAMA_SCOPE': 'lfm25-trial-abc123'}):
-            self.assertEqual(core.load('lfm25')['scope'], 'lfm25-trial-abc123')
-
     def test_bonsai_sampling_and_no_speculation(self):
         p = core.load('bonsai2')
         args = core.command(p)
@@ -139,7 +121,7 @@ class CoreTests(unittest.TestCase):
         for spec in ('draft-mtp', 'draft-dflash'):
             with self.assertRaises(ValueError):
                 core.load('bonsai2', {'spec': spec})
-        with patch.dict('os.environ', {'BONSAI_CONTEXT': '16384', 'LFM_CONTEXT': '65536'}):
+        with patch.dict('os.environ', {'BONSAI_CONTEXT': '16384', 'QWEN_CONTEXT': '65536'}):
             self.assertEqual(core.load('bonsai2')['context'], 16384)
 
     def test_bonsai_mtp_embedded_head_and_disable(self):

@@ -1,7 +1,7 @@
 # Local llama.cpp inference
 
 One WSL/Linux repository for Swift 1.5 IQ3_S MTP, Qwen3.6 IQ3_S DFlash,
-and LFM2.5 24B A2B NVFP4 (without speculation).
+LFM2.5 24B A2B NVFP4, and Ternary Bonsai 2 9B Q2_0 (the latter two without speculation).
 Each profile pins its own tested llama.cpp CUDA 12.8 prebuilt runtime. No source
 build, CUDA toolkit installation, or driver changes are required.
 
@@ -20,6 +20,9 @@ python3 llama.py start swift15
 python3 llama.py status
 python3 llama.py stop swift15
 python3 llama.py start qwen36
+# Bonsai shortcut (128K context, upstream runtime):
+python3 llama.py install bonsai2
+./start_bonsai2.sh
 ```
 
 Only one profile can use the default port at a time. Start refuses an occupied
@@ -34,6 +37,7 @@ is available through the explicit command below.
 | swift15 | b11393 | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
 | qwen36 | b11433 | 131072 | f16/f16 | 4096/2048 | separate DFlash, max 8 |
 | lfm25 | b11433 | 131072 | f16/f16 | 4096/1024 | none; no embedded MTP |
+| bonsai2 | b11669 | 131072 | f16/f16 | 2048/512 | none |
 
 All profiles use full layer offload, Flash Attention, one slot, Direct I/O loading,
 two checkpoints and 2 GiB RAM prompt cache. OpenCode thread naming can displace
@@ -46,6 +50,18 @@ Its native context limit and launch default are 131072. The model always reasons
 no reasoning-effort variants are advertised. The profile explicitly sets the
 model page's temperature 0.1, top-k 50 and repetition penalty 1.05.
 NVFP4 activation precision follows runtime/model defaults; no forced W4A4 override.
+
+Bonsai uses upstream b11669 (commit `620d2225cc436ab0b001e3200e590e3b286ef9ab`),
+which supports the `prism.hadamard` activation transforms required by Bonsai 2.
+The older pinned runtimes recognize Q2_0 but lack these transforms. Only the
+text model `Ternary-Bonsai-2-9B-Q2_0.gguf` is installed, without a vision projector
+or draft model. Alias: `ternary-bonsai-2-9b-q2_0`. Thinking uses the model card's
+temperature 1.0, top-p 0.95, top-k 20, min-p 0, presence penalty 1.0, repetition
+penalty 1.0 and a 64-token penalty window. OpenCode advertises 131072 context and
+8192 output tokens, with `variants: []`; no reasoning-effort presets are inferred.
+These are initial settings for evaluation, not measured performance defaults.
+Bonsai uses `--fit off` and the `BONSAI_*` environment prefix. Stop it with
+`python3 llama.py stop bonsai2`.
 
 Start overrides: `--context`, `--batch`, `--ubatch`, `--draft-max`, `--spec`,
 `--cache-k`, `--cache-v`, `--load-mode`, `--port`. CLI overrides take precedence
@@ -61,6 +77,7 @@ python3 llama.py opencode add qwen36 --dry-run
 python3 llama.py opencode add qwen36
 python3 llama.py opencode add swift15
 python3 llama.py opencode add lfm25
+python3 llama.py opencode add bonsai2
 opencode models
 ```
 
@@ -73,7 +90,7 @@ Registration requires neither GPU access nor installed weights.
 `--config PATH` targets another config. `--context`, `--port` and
 `--output-tokens` match launch overrides and customize advertised limits; they
 do not change the server. Output defaults to 8192 tokens for Swift/Qwen and
-15360 (15K) for LFM. Context and port also
+15360 (15K) for LFM and 8192 for Bonsai. Context and port also
 honor the existing profile environment overrides. Display names describe the
 profile's default context; the numeric `limit.context` reflects overrides.
 
@@ -119,6 +136,7 @@ Stop any existing server before fresh-process probes:
 python3 llama.py smoke swift15
 python3 llama.py smoke qwen36
 python3 llama.py smoke lfm25
+python3 llama.py smoke bonsai2
 python3 experiments/lfm_benchmark.py
 python3 experiments/swift_prefill_benchmark.py --repeats 1
 python3 experiments/qwen_benchmark.py --label screening --smoke
@@ -159,7 +177,7 @@ consolidated Git history until rollback has been verified.
 ```bash
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q llama.py lib experiments tests
-bash -n start_swift15_iq3s_128k.sh start_qwen36.sh
+bash -n start_swift15_iq3s_128k.sh start_qwen36.sh start_bonsai2.sh
 git diff --check
 ```
 

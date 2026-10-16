@@ -26,5 +26,19 @@
       "sha256": "1acadcd2ffd86b566940d36a14be4adbd83b1e04f36f54b9e1790bbffadcb864",
       "size": 594377709
     }
+  ],
+  "b11669-cuda12.8": [
+    {
+      "file": "llama-b11669-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/llama-b11669-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "sha256": "4703ed1a3cd6e8504affb6cb9866f501e96d634d68a002dc9a8251c9e2819b49",
+      "size": 172525113
+    },
+    {
+      "file": "cudart-llama-b11669-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11669/cudart-llama-b11669-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "sha256": "ab3eda89a82096bcba00b6448218c3c11eec2016b0f38d64884dc29736549f26",
+      "size": 594377811
+    }
   ]
 }

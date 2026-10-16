@@ -66,6 +66,20 @@ class OpenCodeTests(unittest.TestCase):
         self.assertEqual(model['limit']['context'], 131072)
         self.assertEqual(model['variants'], [{'id': 'custom', 'settings': {'temperature': 0.2}}])
 
+    def test_bonsai_registration_preserves_other_profiles(self):
+        source = opencode.merge('{}', self.profile)
+        before = jsonc.parse(source).value['providers']['llama.cpp']
+        p = core.load('bonsai2')
+        result = opencode.merge(source, p)
+        provider = jsonc.parse(result).value['providers']['llama.cpp']
+        self.assertEqual(provider['settings'], before['settings'])
+        self.assertEqual(provider['models'][self.profile['alias']], before['models'][self.profile['alias']])
+        model = provider['models'][p['alias']]
+        self.assertEqual(model['limit'], {'context': 131072, 'output': 8192})
+        self.assertEqual(model['capabilities'], {'tools': True, 'input': ['text'], 'output': ['text']})
+        self.assertEqual(model['variants'], [])
+        self.assertEqual(opencode.merge(result, p), result)
+
     def test_swift_options_and_override_precedence(self):
         p = core.load('swift15', {'context': 65536})
         result = opencode.merge('{}', p, output_tokens=4096)

@@ -100,6 +100,22 @@ class CoreTests(unittest.TestCase):
         with patch.dict('os.environ', {'LLAMA_SCOPE': 'lfm25-trial-abc123'}):
             self.assertEqual(core.load('lfm25')['scope'], 'lfm25-trial-abc123')
 
+    def test_bonsai_sampling_and_no_speculation(self):
+        p = core.load('bonsai2')
+        args = core.command(p)
+        for flag, value in {'--spec-type': 'none', '--temp': '1.0', '--top-p': '0.95',
+                            '--top-k': '20', '--min-p': '0.0', '--presence-penalty': '1.0',
+                            '--repeat-penalty': '1.0', '--repeat-last-n': '64',
+                            '-c': '131072', '--cache-type-k': 'f16', '--cache-type-v': 'f16'}.items():
+            self.assertEqual(args[args.index(flag) + 1], value)
+        self.assertNotIn('-md', args)
+        self.assertNotIn('--spec-draft-n-max', args)
+        for spec in ('draft-mtp', 'draft-dflash'):
+            with self.assertRaises(ValueError):
+                core.load('bonsai2', {'spec': spec})
+        with patch.dict('os.environ', {'BONSAI_CONTEXT': '16384', 'LFM_CONTEXT': '65536'}):
+            self.assertEqual(core.load('bonsai2')['context'], 16384)
+
 
 if __name__ == '__main__':
     unittest.main()

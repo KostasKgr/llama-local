@@ -12,7 +12,8 @@ import tarfile
 ROOT = Path(__file__).resolve().parent.parent
 PROFILES = {'swift15': ('SWIFT', 'draft-mtp'),
             'qwen36': ('QWEN', 'draft-dflash'),
-            'lfm25': ('LFM', 'none')}
+            'lfm25': ('LFM', 'none'),
+            'bonsai2': ('BONSAI', 'none')}
 FIELDS = {'context': int, 'batch': int, 'ubatch': int, 'draft_max': int, 'port': int,
           'cache_k': str, 'cache_v': str, 'load_mode': str, 'spec': str}
 
@@ -60,6 +61,10 @@ def command(p):
         sampling = p['sampling']
         args += ['--temp', str(sampling['temperature']), '--top-k', str(sampling['top_k']),
                  '--repeat-penalty', str(sampling['repeat_penalty'])]
+        for key, flag in [('top_p', '--top-p'), ('min_p', '--min-p'),
+                          ('presence_penalty', '--presence-penalty'), ('repeat_last_n', '--repeat-last-n')]:
+            if key in sampling:
+                args += [flag, str(sampling[key])]
     if p['spec'] != 'none':
         args += ['--spec-draft-n-max', str(p['draft_max'])]
         if p['spec'] == 'draft-dflash':

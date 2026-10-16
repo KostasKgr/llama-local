@@ -28,14 +28,21 @@ def model_config(profile, output_tokens=None):
     metadata.pop('output_tokens', None)
     if not isinstance(output, int) or output <= 0 or output > profile['context']:
         raise ValueError('Output tokens must be positive and fit within context')
-    metadata['limit'] = {'context': profile['context'], 'output': output}
-    return metadata
+    model = {'name': metadata['name'],
+             'capabilities': {'tools': metadata['tool_call'], **metadata['modalities']},
+             'limit': {'context': profile['context'], 'output': output}}
+    if 'options' in metadata:
+        model['settings'] = metadata['options']
+    if 'variants' in metadata:
+        model['variants'] = [{'id': name, 'settings': settings}
+                             for name, settings in metadata['variants'].items()]
+    return model
 
 
 def merge(source, profile, output_tokens=None, update=False):
     desired = {
-        'npm': '@ai-sdk/openai-compatible',
-        'options': {'baseURL': f"http://127.0.0.1:{profile['port']}/v1"},
+        'package': '@opencode/ai/providers/openai-compatible',
+        'settings': {'baseURL': f"http://127.0.0.1:{profile['port']}/v1"},
         'models': {profile['alias']: model_config(profile, output_tokens)},
     }
     existing = jsonc.parse(source).value
@@ -55,11 +62,11 @@ def merge(source, profile, output_tokens=None, update=False):
                 conflicts.append('.'.join(target))
                 changes.append((target, value))
 
-    visit(existing, {'provider': {PROVIDER: desired}}, [])
+    visit(existing, {'providers': {PROVIDER: desired}}, [])
     if conflicts and not update:
         raise ValueError('Conflicting settings: ' + ', '.join(conflicts) + '; use --update to replace those fields')
     # Display name is a default for a new provider; preserve an existing name.
-    providers = existing.get('provider', {})
+    providers = existing.get('providers', {})
     if PROVIDER not in providers:
         desired['name'] = 'llama.cpp (WSL)'
     for path, value in changes:

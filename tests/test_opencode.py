@@ -16,9 +16,9 @@ class OpenCodeTests(unittest.TestCase):
         source = '''{
   // url is not a comment
   "other": {"url": "http://example.test/*literal*/",},
-  "provider": {"llama.cpp": {
-    "npm": "@ai-sdk/openai-compatible",
-    "options": {"baseURL": "http://127.0.0.1:1235/v1"},
+  "providers": {"llama.cpp": {
+    "package": "@opencode/ai/providers/openai-compatible",
+    "settings": {"baseURL": "http://127.0.0.1:1235/v1"},
     "models": {"existing": {"limit": {"context": 100,},}, /* keep */},
   },},
 }
@@ -28,39 +28,56 @@ class OpenCodeTests(unittest.TestCase):
         self.assertIn('/* keep */', result)
         self.assertIn('"existing": {"limit": {"context": 100,},}', result)
         self.assertEqual(opencode.merge(result, self.profile), result)
-        self.assertIn(self.profile['alias'], jsonc.parse(result).value['provider']['llama.cpp']['models'])
+        self.assertIn(self.profile['alias'], jsonc.parse(result).value['providers']['llama.cpp']['models'])
 
     def test_missing_provider_and_existing_provider_name(self):
         result = opencode.merge('{}', self.profile)
-        self.assertEqual(jsonc.parse(result).value['provider']['llama.cpp']['name'], 'llama.cpp (WSL)')
-        source = '{"provider":{"llama.cpp":{"name":"Custom"}}}'
+        self.assertEqual(jsonc.parse(result).value['providers']['llama.cpp']['name'], 'llama.cpp (WSL)')
+        source = '{"providers":{"llama.cpp":{"name":"Custom"}}}'
         result = opencode.merge(source, self.profile)
-        self.assertEqual(jsonc.parse(result).value['provider']['llama.cpp']['name'], 'Custom')
+        self.assertEqual(jsonc.parse(result).value['providers']['llama.cpp']['name'], 'Custom')
+
+    def test_lfm_v2_registration_preserves_existing_models(self):
+        source = opencode.merge('{}', self.profile)
+        existing = jsonc.parse(source).value['providers']['llama.cpp']['models']
+        p = core.load('lfm25')
+        result = opencode.merge(source, p)
+        config = jsonc.parse(result).value
+        self.assertNotIn('provider', config)
+        provider = config['providers']['llama.cpp']
+        self.assertEqual(provider['package'], '@opencode/ai/providers/openai-compatible')
+        self.assertEqual(provider['models'][self.profile['alias']], existing[self.profile['alias']])
+        model = provider['models'][p['alias']]
+        self.assertEqual(model['limit'], {'context': 131072, 'output': 15360})
+        self.assertEqual(model['capabilities'], {'tools': True, 'input': ['text'], 'output': ['text']})
+        self.assertNotIn('reasoning', model)
+        self.assertNotIn('temperature', model)
+        self.assertEqual(opencode.merge(result, p), result)
 
     def test_conflicts_update_preserves_custom_fields(self):
         source = opencode.merge('{}', self.profile)
-        path = ['provider', 'llama.cpp', 'models', self.profile['alias']]
+        path = ['providers', 'llama.cpp', 'models', self.profile['alias']]
         source = jsonc.set_value(source, path + ['limit', 'context'], 32000)
-        source = jsonc.set_value(source, path + ['variants'], {'custom': {'temperature': 0.2}})
+        source = jsonc.set_value(source, path + ['variants'], [{'id': 'custom', 'settings': {'temperature': 0.2}}])
         with self.assertRaisesRegex(ValueError, '--update'):
             opencode.merge(source, self.profile)
         updated = opencode.merge(source, self.profile, update=True)
-        model = jsonc.parse(updated).value['provider']['llama.cpp']['models'][self.profile['alias']]
+        model = jsonc.parse(updated).value['providers']['llama.cpp']['models'][self.profile['alias']]
         self.assertEqual(model['limit']['context'], 131072)
-        self.assertEqual(model['variants'], {'custom': {'temperature': 0.2}})
+        self.assertEqual(model['variants'], [{'id': 'custom', 'settings': {'temperature': 0.2}}])
 
     def test_swift_options_and_override_precedence(self):
         p = core.load('swift15', {'context': 65536})
         result = opencode.merge('{}', p, output_tokens=4096)
-        model = jsonc.parse(result).value['provider']['llama.cpp']['models'][p['alias']]
-        self.assertEqual(model['options'], {'reasoningEffort': 'xhigh'})
-        self.assertEqual(set(model['variants']), {'none', 'low', 'medium', 'xhigh'})
+        model = jsonc.parse(result).value['providers']['llama.cpp']['models'][p['alias']]
+        self.assertEqual(model['settings'], {'reasoningEffort': 'xhigh'})
+        self.assertEqual({v['id'] for v in model['variants']}, {'none', 'low', 'medium', 'xhigh'})
         self.assertEqual(model['limit'], {'context': 65536, 'output': 4096})
         with patch.dict(os.environ, {'QWEN_CONTEXT': '32768', 'QWEN_PORT': '5555'}):
             p = core.load('qwen36', {'port': 1235})
             result = opencode.merge('{}', p)
-            provider = jsonc.parse(result).value['provider']['llama.cpp']
-            self.assertEqual(provider['options']['baseURL'], 'http://127.0.0.1:1235/v1')
+            provider = jsonc.parse(result).value['providers']['llama.cpp']
+            self.assertEqual(provider['settings']['baseURL'], 'http://127.0.0.1:1235/v1')
             self.assertEqual(provider['models'][p['alias']]['limit']['context'], 32768)
 
     def test_shared_endpoint_conflict(self):
@@ -69,7 +86,7 @@ class OpenCodeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'baseURL'):
             opencode.merge(source, p)
         updated = opencode.merge(source, p, update=True)
-        self.assertEqual(jsonc.parse(updated).value['provider']['llama.cpp']['options']['baseURL'], 'http://127.0.0.1:4321/v1')
+        self.assertEqual(jsonc.parse(updated).value['providers']['llama.cpp']['settings']['baseURL'], 'http://127.0.0.1:4321/v1')
 
     def test_invalid_jsonc_and_duplicate_keys(self):
         for source in ['{"a":1,"a":2}', '{/*', '{"a":NaN}', '{"a":}', '[]', '{} {}']:

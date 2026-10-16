@@ -61,10 +61,11 @@ python3 llama.py opencode add qwen36 --dry-run
 python3 llama.py opencode add qwen36
 python3 llama.py opencode add swift15
 python3 llama.py opencode add lfm25
-opencode models llama.cpp
+opencode models
 ```
 
-The command adds the profile alias under `provider["llama.cpp"].models` in
+The command supports OpenCode v2 and adds the profile alias under
+`providers["llama.cpp"].models` in
 `~/.config/opencode/opencode.jsonc`. It does not start a server or select a default
 model. All profiles may be listed; start the matching profile before using it.
 Registration requires neither GPU access nor installed weights.
@@ -82,8 +83,9 @@ variants are retained, and conflicting managed fields require `--update`.
 `--update` replaces only those conflicting fields. Changing the provider's
 baseURL affects every model under `llama.cpp`, so use it only when all registered
 models should use that endpoint. Use a separate config for independent endpoints.
-Swift retains its current reasoning options/variants. Qwen has text, reasoning,
-temperature and tool-call metadata but no unvalidated reasoning-effort options.
+The v2 entry uses `package`, provider `settings`, model `capabilities` and limits.
+Swift retains its reasoning settings and v2 variant array. Qwen and LFM have text
+and tool-call capabilities, without unvalidated reasoning-effort settings.
 
 Every actual edit prints a diff, saves a uniquely named backup beside the original
 config, and replaces it atomically while preserving permissions. Invalid JSONC,

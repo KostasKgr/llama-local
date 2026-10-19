@@ -25,6 +25,12 @@
       "url": "https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-27B-GSQ-RCO-GGUF/resolve/d74895bbe5db4bec1e0024e7cc87d59c02d7631a/Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf",
       "sha256": "9aecf1cd41b2cb2f32a74e0d889e33855ebef43b26f43b43feb5720239e677e5",
       "size": 12120016896
+    },
+    {
+      "file": "swift15/mmproj-Swift-1.5-Qwen3.8-27B-F16.gguf",
+      "url": "https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-27B-GGUF/resolve/14bfe4b42be4a925d98816db830155f476c605e7/mmproj-Swift-1.5-Qwen3.8-27B-F16.gguf",
+      "sha256": "10a24dc46eb801ad794886ef27ea1e43634d35388dfaf2e2374b7a8b67faf526",
+      "size": 927606912
     }
   ],
   "bonsai2": [

@@ -80,12 +80,30 @@ class OpenCodeTests(unittest.TestCase):
         self.assertEqual(model['settings'], {'reasoningEffort': 'xhigh'})
         self.assertEqual({v['id'] for v in model['variants']}, {'none', 'low', 'medium', 'xhigh'})
         self.assertEqual(model['limit'], {'context': 65536, 'output': 4096})
+        self.assertEqual(model['capabilities']['input'], ['text', 'image'])
         with patch.dict(os.environ, {'QWEN_CONTEXT': '32768', 'QWEN_PORT': '5555'}):
             p = core.load('qwen36', {'port': 1235})
             result = opencode.merge('{}', p)
             provider = jsonc.parse(result).value['providers']['llama.cpp']
             self.assertEqual(provider['settings']['baseURL'], 'http://127.0.0.1:1235/v1')
             self.assertEqual(provider['models'][p['alias']]['limit']['context'], 32768)
+
+    def test_swift_vision_updates_existing_text_registration(self):
+        p = core.load('swift15')
+        source = opencode.merge('{}', self.profile)
+        source = opencode.merge(source, p)
+        path = ['providers', 'llama.cpp', 'models', p['alias']]
+        source = jsonc.set_value(source, path + ['capabilities', 'input'], ['text'])
+        before = jsonc.parse(source).value['providers']['llama.cpp']['models']
+        with self.assertRaisesRegex(ValueError, 'capabilities.input'):
+            opencode.merge(source, p)
+        updated = opencode.merge(source, p, update=True)
+        models = jsonc.parse(updated).value['providers']['llama.cpp']['models']
+        self.assertEqual(models[self.profile['alias']], before[self.profile['alias']])
+        expected = before[p['alias']]
+        expected['capabilities']['input'] = ['text', 'image']
+        self.assertEqual(models[p['alias']], expected)
+        self.assertEqual(opencode.merge(updated, p), updated)
 
     def test_shared_endpoint_conflict(self):
         source = opencode.merge('{}', self.profile)

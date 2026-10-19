@@ -57,6 +57,8 @@ def command(p):
             '--metrics', '--perf', '--log-verbosity', '4']
     if p['fit_off']:
         args += ['--fit', 'off']
+    if p.get('mmproj'):
+        args += ['--mmproj', str(ROOT / 'models' / p['mmproj'])]
     if 'sampling' in p:
         sampling = p['sampling']
         args += ['--temp', str(sampling['temperature']), '--top-k', str(sampling['top_k']),
@@ -85,6 +87,8 @@ def preflight(p):
     if not os.access(args[0], os.X_OK):
         raise ValueError('Runtime missing; run install first')
     files = [p['model']]
+    if p.get('mmproj'):
+        files.append(p['mmproj'])
     if p['spec'] == 'draft-dflash':
         files += [p['draft']]
         files += [a['file'] for a in manifest('models')['qwen36'] if '-of-' in a['file']]

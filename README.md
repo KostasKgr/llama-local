@@ -49,6 +49,24 @@ Scopes use MemoryHigh=6G,
 MemoryMax=8G and MemorySwapMax=0; these limits apply to host RAM, not VRAM.
 Qwen uses `--fit off`. Runtime upgrades require independent model validation.
 
+Swift15 also loads `mmproj-Swift-1.5-Qwen3.8-27B-F16.gguf` for image input.
+The 927,606,912-byte (885 MiB) projector comes from
+[UkisAI's standard Swift GGUF repository](https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-27B-GGUF),
+with an immutable revision and SHA-256 in `manifests/models.json`.
+Run `python3 llama.py install swift15` to add it to an existing installation,
+then `python3 llama.py verify swift15`. The launcher passes `--mmproj` and
+refuses to start if the projector is missing. The runtime pin, 128K context,
+KV cache settings and MTP depth remain unchanged. Image encoding needs additional
+GPU memory beyond the projector weights; large-image capacity is workload dependent.
+The API accepts OpenAI-style `image_url` content, including base64 data URLs.
+`python3 llama.py smoke swift15` checks text and red/blue image recognition,
+using locally generated PNGs, and cleans up its own trial scope.
+Validated on 2026-10-19 with the pinned b11393 runtime, 128K context and MTP
+enabled: text chat, red/blue API image recognition, tool-call formatting and
+a green image attached through `opencode run --standalone` all passed.
+The small-image smoke used about 20 GiB of GPU memory; it does not establish
+capacity for large images or a fully populated 128K prompt.
+
 Bonsai uses upstream b11669 (commit `620d2225cc436ab0b001e3200e590e3b286ef9ab`),
 which supports the `prism.hadamard` activation transforms required by Bonsai 2.
 The older pinned runtimes recognize Q2_0 but lack these transforms. Only the
@@ -100,6 +118,12 @@ The command supports OpenCode v2 and adds the profile alias under
 `~/.config/opencode/opencode.jsonc`. It does not start a server or select a default
 model. All profiles may be listed; start the matching profile before using it.
 Registration requires neither GPU access nor installed weights.
+
+Swift advertises text and image input. To update an existing text-only entry, run
+`python3 llama.py opencode add swift15 --update`. Include `--output-tokens N`
+to preserve a custom output limit (otherwise registration uses the 8192 default).
+Restart an already running Swift server after installing the projector so image
+input is available.
 
 `--config PATH` targets another config. `--context`, `--port` and
 `--output-tokens` match launch overrides and customize advertised limits; they
@@ -188,8 +212,9 @@ The steps below use `newmodel` as the new profile name; replace it throughout.
    Advertise only verified capabilities. Use `variants: {}` in the profile to
    generate `variants: []` in OpenCode and suppress inferred effort presets.
    Add `options` or named variants only after verifying the model/runtime accepts
-   those settings. Vision support needs launcher work; advertising an image
-   modality alone does not load a projector.
+   those settings. Vision support requires a compatible `mmproj` path in the
+   profile and a pinned projector artifact in the model manifest; advertising an
+   image modality alone does not load a projector.
 
 5. **Validate and install.** Add tests for generated arguments, speculation
    enable/disable behavior and OpenCode registration preserving existing models.
@@ -279,5 +304,5 @@ git diff --check
 ```
 
 Live smoke checks verify each profile's default context loading, health, model
-alias, chat and scope limits.
+alias, chat and scope limits, plus image recognition for profiles with `mmproj`.
 Performance experiments are explicit commands and do not run during unit tests.

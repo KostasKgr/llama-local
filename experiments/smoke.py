@@ -1,12 +1,15 @@
 """Fresh-process API smoke check; always cleans up its owned server."""
+import base64
 import json
 import os
 import uuid
 from pathlib import Path
 import subprocess
 import signal
+import struct
 import sys
 import time
+import zlib
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import core, probes
 
@@ -45,6 +48,27 @@ try:
         'max_tokens': 32, 'temperature': 0,
         'chat_template_kwargs': {'enable_thinking': False}})
     assert '4' in record['response']['choices'][0]['message']['content']
+    if p.get('mmproj'):
+        # Generate two solid PNGs locally: no external image dependency or download.
+        def chunk(kind, data):
+            return (struct.pack('>I', len(data)) + kind + data +
+                    struct.pack('>I', zlib.crc32(kind + data)))
+
+        record['vision'] = []
+        for color, rgb in [('red', b'\xff\x00\x00'), ('blue', b'\x00\x00\xff')]:
+            png = (b'\x89PNG\r\n\x1a\n' +
+                   chunk(b'IHDR', struct.pack('>IIBBBBB', 128, 128, 8, 2, 0, 0, 0)) +
+                   chunk(b'IDAT', zlib.compress((b'\x00' + rgb * 128) * 128)) +
+                   chunk(b'IEND', b''))
+            response = probes.request(base, '/v1/chat/completions', {
+                'model': p['alias'], 'messages': [{'role': 'user', 'content': [
+                    {'type': 'image_url', 'image_url': {
+                        'url': 'data:image/png;base64,' + base64.b64encode(png).decode()}},
+                    {'type': 'text', 'text': 'What color is this image? Answer with one color word only.'}]}],
+                'max_tokens': 32, 'temperature': 0,
+                'chat_template_kwargs': {'enable_thinking': False}})
+            record['vision'].append({'expected': color, 'response': response})
+            assert color in response['choices'][0]['message']['content'].lower()
     record['scope'] = subprocess.check_output(['systemctl', '--user', 'show', p['scope'] + '.scope',
         '-p', 'MemoryHigh', '-p', 'MemoryMax', '-p', 'MemorySwapMax'], text=True)
     assert 'MemoryHigh=6442450944' in record['scope'] and 'MemoryMax=8589934592' in record['scope'] and 'MemorySwapMax=0' in record['scope']

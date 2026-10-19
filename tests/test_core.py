@@ -74,6 +74,22 @@ class CoreTests(unittest.TestCase):
         with patch.dict('os.environ', {'LLAMA_SCOPE': 'swift15-trial-abc123'}):
             self.assertEqual(core.load('swift15')['scope'], 'swift15-trial-abc123')
 
+    def test_projector_arguments_and_missing_artifact(self):
+        p = core.load('swift15')
+        args = core.command(p)
+        projector = core.ROOT / 'models' / p['mmproj']
+        self.assertEqual(args[args.index('--mmproj') + 1], str(projector))
+        for name in ('qwen36', 'bonsai2', 'bonsai2mtp'):
+            self.assertNotIn('--mmproj', core.command(core.load(name)))
+        with patch('lib.core.os.access', return_value=True), \
+                patch.object(Path, 'is_file', autospec=True,
+                             side_effect=lambda path: path != projector), \
+                patch('lib.core.socket.socket') as sock, patch.object(core, 'scope_active') as active:
+            with self.assertRaisesRegex(ValueError, 'artifact missing'):
+                core.preflight(p)
+            sock.assert_not_called()
+            active.assert_not_called()
+
     def test_invalid_overrides(self):
         for override in [{'ubatch': 8192}, {'port': 0}, {'context': -1}, {'spec': 'draft-dflash'}]:
             with self.assertRaises(ValueError):
@@ -107,6 +123,8 @@ class CoreTests(unittest.TestCase):
             self.assertIn(p['model'], files)
             if 'draft' in p:
                 self.assertIn(p['draft'], files)
+            if p.get('mmproj'):
+                self.assertIn(p['mmproj'], files)
 
     def test_bonsai_sampling_and_no_speculation(self):
         p = core.load('bonsai2')

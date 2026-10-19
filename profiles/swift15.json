@@ -1,6 +1,7 @@
 {
   "runtime": "b11393-cuda12.8",
   "model": "swift15/Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf",
+  "mmproj": "swift15/mmproj-Swift-1.5-Qwen3.8-27B-F16.gguf",
   "context": 131072,
   "batch": 2048,
   "ubatch": 512,
@@ -21,7 +22,8 @@
     "tool_call": true,
     "modalities": {
       "input": [
-        "text"
+        "text",
+        "image"
       ],
       "output": [
         "text"

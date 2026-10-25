@@ -1,8 +1,9 @@
 # Local llama.cpp inference
 
 One WSL/Linux repository for Swift 1.5 IQ3_S MTP, Qwen3.6 IQ3_S DFlash,
-and Ternary Bonsai 2 9B Q2_0 (without speculation).
-Each profile pins its own tested llama.cpp CUDA 12.8 prebuilt runtime. No source
+Ternary Bonsai 2 9B Q2_0 (without speculation), and Nemotron 3.5 Bolt E4B DFlash.
+Each profile pins its own llama.cpp prebuilt runtime (CUDA 12.8 for existing
+profiles, CUDA 13.4 for Bolt). No source
 build, CUDA toolkit installation, or driver changes are required.
 An optional Bonsai MTP profile uses the PrismML fork and an embedded prediction head.
 
@@ -41,6 +42,7 @@ is available through the explicit command below.
 | qwen36 | b11433 | 131072 | f16/f16 | 4096/2048 | separate DFlash, max 8 |
 | bonsai2 | b11669 | 131072 | f16/f16 | 2048/512 | none |
 | bonsai2mtp | prism-b10777-e3de715 | 131072 | f16/f16 | 2048/512 | embedded MTP, max 2 |
+| bolt35 | b11808 CUDA 13.4 | 65536 | f16/f16 | 2048/512 | separate DFlash, max 7 |
 
 All profiles use full layer offload, Flash Attention, one slot, Direct I/O loading,
 two checkpoints and 2 GiB RAM prompt cache. OpenCode thread naming can displace
@@ -94,6 +96,79 @@ OpenCode alias: `ternary-bonsai-2-9b-pq2_0-mtp` (128K context, 8192 output token
 Use `./start_bonsai2_mtp.sh`, then select that alias in OpenCode; stop with
 `python3 llama.py stop bonsai2mtp`. Overrides use `BONSAI_MTP_*`; `--spec none`
 disables MTP for comparisons. The upstream `bonsai2` profile remains available.
+
+Bolt uses the official NVIDIA `Nemotron-3.5-Bolt-E4B-Q4_K_M.gguf` target and
+`Nemotron-3.5-Bolt-E4B-DFlash-BF16.gguf` drafter, pinned to immutable revisions in
+`manifests/models.json`. Together they occupy 6,917,258,304 bytes on disk; the
+model's “4GB” name is not a full-context VRAM guarantee. It uses a separate
+upstream b11808 CUDA 13.4 runtime and matching libraries, with no CUDA 12 Bolt
+variant. Existing profiles retain their runtime pins. No driver/toolkit change
+is performed. CUDA driver compatibility must be checked on other machines.
+Sources: [target card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB),
+[drafter card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB-DFlash),
+[runtime release](https://github.com/ggml-org/llama.cpp/releases/tag/b11808).
+
+```bash
+python3 llama.py install bolt35
+python3 llama.py verify bolt35
+python3 llama.py start bolt35 --dry-run
+./start_bolt35.sh
+# From another terminal:
+python3 llama.py stop bolt35
+python3 llama.py opencode add bolt35
+# Select llama.cpp/nemotron-3.5-bolt-e4b-q4km-dflash in OpenCode.
+```
+
+Bolt exposes text input/output, a 65536-token context and 8192-token OpenCode
+output limit, with no inferred reasoning-effort presets. Sampling follows the
+card's temperature 1.0 and top-p 0.95; top-k/min-p filtering is disabled and
+repetition penalty is 1.0. The runtime's embedded template handles
+`chat_template_kwargs.enable_thinking` and `conversational_mode`; no custom
+chat template is installed. Context includes prompt and generated tokens.
+Batch sizing and f16 KV are provisional settings, not tuned performance defaults.
+Overrides use `BOLT35_*`; `--spec none` omits the drafter for baseline decoding.
+
+Validated on 2026-10-25 with b11808 commit `4912ac24f`, bundled CUDA runtime
+13040 and RTX 5090 Laptop GPU on driver 592.27: artifact verification, 64K
+configured-context smoke with speculation off/on, thinking on/off, conversational
+mode, streaming, structured tool-call round trips and the registered OpenCode
+alias all passed. OpenCode returned exactly `hello world` in both modes.
+CUDA 13.4 is the sole retained Bolt runtime; no CUDA 12 Bolt runtime was needed.
+
+Three repetitions of short text workloads at temperature 0, with prompt reuse
+disabled and a 512-token output cap, gave median generation speeds of 99.4 →
+113.1 tokens/s for chat, 98.8 → 195.6 for code and 97.7 → 165.2 for JSON-schema
+output (ordinary decoding → DFlash). DFlash accepted 3323 of 9563 proposed tokens
+across the validation, workloads and client run. GPU memory samples were 5453 MiB
+without speculation and 7325 MiB with DFlash. Greedy free-form outputs differed
+between modes, including wording and response lengths; these measurements do
+not establish token-identical decoding or a fixed-work end-to-end speedup.
+Evidence is in ignored `logs/bolt35/comparison-20261025-132156-none/` and
+`logs/bolt35/comparison-20261025-132252-draft-dflash/`. A Qwen smoke check also
+passed after the shard-preflight change. These checks establish short-request
+operation at the configured context capacity, not full-64K recall or quality.
+An additional comparison confirmed exact arithmetic, capital-city and extraction
+answers in both modes, and verified reasoning content appears only with thinking
+enabled (`comparison-20261025-132430-none/` and
+`comparison-20261025-132455-draft-dflash/` under `logs/bolt35/`). Swift was restored
+after testing; its production scope, health, original alias and text chat passed.
+
+When the GPU and port are free, run the smoke checks sequentially:
+
+```bash
+BOLT35_SPEC_TYPE=none python3 llama.py smoke bolt35
+python3 llama.py smoke bolt35
+python3 experiments/bolt_benchmark.py --repeats 3 --opencode
+```
+
+The comparison validates thinking on/off, conversational mode, streaming, a
+structured tool-call round trip, and optionally the registered OpenCode alias.
+It also checks exact arithmetic/extraction answers and verifies reasoning
+content follows the thinking control. It compares three text workloads with speculation off/on, records API timing,
+GPU memory samples and speculation metrics under ignored `logs/bolt35/`, and
+stops only its uniquely named trial scopes. GPU samples are not continuous peak
+measurements. It refuses to run when more than 2 GiB GPU memory is already used.
+These synthetic workloads do not establish coding quality or long-context recall.
 
 Start overrides: `--context`, `--batch`, `--ubatch`, `--draft-max`, `--spec`,
 `--cache-k`, `--cache-v`, `--load-mode`, `--port`. CLI overrides take precedence
@@ -182,8 +257,8 @@ The steps below use `newmodel` as the new profile name; replace it throughout.
    Reuse a validated runtime or add a separate key in `manifests/runtimes.json`
    with release-specific URLs, hashes and sizes. Include compatible CUDA libraries
    when the binary archive omits them. The current installer expects tar archives
-   with one top-level folder and a CUDA 12 runtime; other layouts or backends
-   require explicit installer changes.
+   with one top-level folder and exactly one CUDA 12 or CUDA 13 runtime library;
+   other layouts or backends require explicit installer changes.
 
 2. **Create `profiles/newmodel.json`.** Set the runtime key, model path relative
    to `models/`, unique API alias, scope equal to `newmodel`, port, context,
@@ -201,9 +276,10 @@ The steps below use `newmodel` as the new profile name; replace it throughout.
    such as `'newmodel': ('NEWMODEL', 'none')`. The tuple defines its environment
    prefix and allowed speculation mode; `none` is always allowed. CLI choices
    come from this registry, so a JSON file alone is insufficient. Check
-   `command()` and `preflight()` for model-specific assumptions: separate DFlash
-   shard checks currently refer to Qwen explicitly. Extend those paths and tests
-   when the new profile needs them. An optional executable `start_newmodel.sh`
+   `command()` and `preflight()` for model-specific assumptions. Split target
+   models require every adjacent shard from their own profile manifest, even
+   with speculation disabled; DFlash also requires its separate draft file.
+   An optional executable `start_newmodel.sh`
    can follow `start_bonsai2.sh` and forward arguments to `llama.py start newmodel`.
 
 4. **Describe OpenCode capabilities.** Populate the profile's `opencode` object
@@ -299,7 +375,7 @@ consolidated Git history until rollback has been verified.
 ```bash
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q llama.py lib experiments tests
-bash -n start_swift15_iq3s_128k.sh start_qwen36.sh start_bonsai2.sh start_bonsai2_mtp.sh
+bash -n start_swift15_iq3s_128k.sh start_qwen36.sh start_bonsai2.sh start_bonsai2_mtp.sh start_bolt35.sh
 git diff --check
 ```
 

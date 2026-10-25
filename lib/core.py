@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parent.parent
 PROFILES = {'swift15': ('SWIFT', 'draft-mtp'),
             'qwen36': ('QWEN', 'draft-dflash'),
             'bonsai2': ('BONSAI', 'none'),
-            'bonsai2mtp': ('BONSAI_MTP', 'draft-mtp')}
+            'bonsai2mtp': ('BONSAI_MTP', 'draft-mtp'),
+            'bolt35': ('BOLT35', 'draft-dflash')}
 FIELDS = {'context': int, 'batch': int, 'ubatch': int, 'draft_max': int, 'port': int,
           'cache_k': str, 'cache_v': str, 'load_mode': str, 'spec': str}
 
@@ -91,7 +92,11 @@ def preflight(p):
         files.append(p['mmproj'])
     if p['spec'] == 'draft-dflash':
         files += [p['draft']]
-        files += [a['file'] for a in manifest('models')['qwen36'] if '-of-' in a['file']]
+    # Split target models need all adjacent shards even without speculation.
+    if '-of-' in Path(p['model']).name:
+        profile = p['scope'].split('-trial-', 1)[0]
+        files += [a['file'] for a in manifest('models')[profile]
+                  if '-of-' in a['file'] and Path(a['file']).parent == Path(p['model']).parent]
     if any(not (ROOT / 'models' / f).is_file() for f in files):
         raise ValueError('Model artifact missing; run install first')
     with socket.socket() as sock:
@@ -169,7 +174,11 @@ def install(name):
     info = {'profile': name, 'runtime': p['runtime'], 'server_sha256': hashlib.sha256((runtime / 'llama-server').read_bytes()).hexdigest()}
     for key, flag in [('version', '--version'), ('devices', '--list-devices')]:
         info[key] = subprocess.check_output([str(runtime / 'llama-server'), flag], env=env, stderr=subprocess.STDOUT, text=True)
-    cuda = ctypes.CDLL(str(runtime / 'libcudart.so.12'))
+    cuda_libraries = [runtime / f'libcudart.so.{major}' for major in (12, 13)
+                      if (runtime / f'libcudart.so.{major}').is_file()]
+    if len(cuda_libraries) != 1:
+        raise ValueError('Expected exactly one bundled CUDA 12 or 13 runtime library')
+    cuda = ctypes.CDLL(str(cuda_libraries[0]))
     version = ctypes.c_int()
     if cuda.cudaRuntimeGetVersion(ctypes.byref(version)) != 0:
         raise ValueError('Unable to query bundled CUDA runtime')

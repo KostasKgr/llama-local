@@ -11,10 +11,10 @@ from lib import core
 
 
 class CoreTests(unittest.TestCase):
-    def test_install_archive_with_root_directory_entry(self):
+    def check_install_archive(self, major):
         class Cuda:
             def cudaRuntimeGetVersion(self, version):
-                version._obj.value = 12080
+                version._obj.value = major * 1000 + 80
                 return 0
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -26,14 +26,66 @@ class CoreTests(unittest.TestCase):
                 server = tarfile.TarInfo('runtime/llama-server')
                 server.size = 6
                 tar.addfile(server, io.BytesIO(b'server'))
+                library = tarfile.TarInfo(f'runtime/libcudart.so.{major}')
+                library.size = 4
+                tar.addfile(library, io.BytesIO(b'cuda'))
             p = {'runtime': 'prism-test'}
             with patch.object(core, 'ROOT', root), patch.object(core, 'load', return_value=p), \
                     patch.object(core, 'manifest', side_effect=[{'test': []}, {'prism-test': [{}]}]), \
                     patch.object(core, 'fetch', return_value=archive), \
                     patch('lib.core.subprocess.check_output', return_value='test'), \
-                    patch('lib.core.ctypes.CDLL', return_value=Cuda()):
+                    patch('lib.core.ctypes.CDLL', return_value=Cuda()) as cdll:
                 core.install('test')
+            cdll.assert_called_once_with(str(root / f'runtimes/prism-test/libcudart.so.{major}'))
             self.assertEqual((root / 'runtimes/prism-test/llama-server').read_bytes(), b'server')
+            info = json.loads((root / 'runtimes/prism-test/installation.json').read_text())
+            self.assertEqual(info['cuda_runtime_version'], major * 1000 + 80)
+
+    def test_install_archive_with_root_directory_entry(self):
+        self.check_install_archive(12)
+
+    def test_install_cuda13(self):
+        self.check_install_archive(13)
+
+    def test_bolt_dflash_and_disable(self):
+        p = core.load('bolt35')
+        args = core.command(p)
+        self.assertIn('b11808-cuda13.4', args[0])
+        for flag, value in {'-c': '65536', '--spec-type': 'draft-dflash',
+                            '--spec-draft-n-max': '7', '-ngld': '999',
+                            '--temp': '1.0', '--top-p': '0.95', '--top-k': '0'}.items():
+            self.assertEqual(args[args.index(flag) + 1], value)
+        self.assertEqual(args[args.index('-md') + 1], str(core.ROOT / 'models' / p['draft']))
+        args = core.command(core.load('bolt35', {'spec': 'none'}))
+        for flag in ('-md', '-ngld', '--spec-draft-n-max'):
+            self.assertNotIn(flag, args)
+        with patch.dict('os.environ', {'BOLT35_CONTEXT': '32768', 'QWEN_CONTEXT': '16384'}):
+            self.assertEqual(core.load('bolt35')['context'], 32768)
+
+    def test_bolt_preflight_independent_artifacts(self):
+        p = core.load('bolt35')
+        available = {core.ROOT / 'models' / p[k] for k in ('model', 'draft')}
+        with patch('lib.core.os.access', return_value=True), \
+                patch.object(Path, 'is_file', autospec=True, side_effect=lambda path: path in available), \
+                patch('lib.core.socket.socket') as sock, patch.object(core, 'scope_active', return_value=False):
+            sock.return_value.__enter__.return_value.connect_ex.return_value = 1
+            core.preflight(p)
+            for key in ('model', 'draft'):
+                path = core.ROOT / 'models' / p[key]
+                available.remove(path)
+                with self.assertRaisesRegex(ValueError, 'artifact missing'):
+                    core.preflight(p)
+                available.add(path)
+            available.remove(core.ROOT / 'models' / p['draft'])
+            core.preflight(core.load('bolt35', {'spec': 'none'}))
+
+    def test_qwen_shards_required_without_speculation(self):
+        p = core.load('qwen36', {'spec': 'none'})
+        with patch('lib.core.os.access', return_value=True), \
+                patch.object(Path, 'is_file', autospec=True,
+                             side_effect=lambda path: '-00002-of-' not in path.name):
+            with self.assertRaisesRegex(ValueError, 'artifact missing'):
+                core.preflight(p)
 
     def test_start_captures_both_streams_and_preserves_failure(self):
         with tempfile.TemporaryDirectory() as temp:

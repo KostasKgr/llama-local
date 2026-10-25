@@ -73,6 +73,22 @@ class OpenCodeTests(unittest.TestCase):
         self.assertEqual(models[p['alias']]['limit'], {'context': 131072, 'output': 8192})
         self.assertEqual(models[p['alias']]['variants'], [])
 
+    def test_bolt_registration_preserves_existing_models(self):
+        source = '{}'
+        for name in ('swift15', 'qwen36', 'bonsai2', 'bonsai2mtp'):
+            source = opencode.merge(source, core.load(name))
+        before = jsonc.parse(source).value['providers']['llama.cpp']['models']
+        p = core.load('bolt35')
+        result = opencode.merge(source, p)
+        models = jsonc.parse(result).value['providers']['llama.cpp']['models']
+        for alias, model in before.items():
+            self.assertEqual(models[alias], model)
+        self.assertEqual(models[p['alias']]['limit'], {'context': 65536, 'output': 8192})
+        self.assertEqual(models[p['alias']]['capabilities'],
+                         {'tools': True, 'input': ['text'], 'output': ['text']})
+        self.assertEqual(models[p['alias']]['variants'], [])
+        self.assertEqual(opencode.merge(result, p), result)
+
     def test_swift_options_and_override_precedence(self):
         p = core.load('swift15', {'context': 65536})
         result = opencode.merge('{}', p, output_tokens=4096)

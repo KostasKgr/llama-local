@@ -54,5 +54,19 @@
       "sha256": "ab3eda89a82096bcba00b6448218c3c11eec2016b0f38d64884dc29736549f26",
       "size": 594377811
     }
+  ],
+  "b11808-cuda13.4": [
+    {
+      "file": "cudart-llama-b11808-bin-ubuntu-cuda-13.4-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11808/cudart-llama-b11808-bin-ubuntu-cuda-13.4-x64.tar.gz",
+      "sha256": "df4d8b051fb7d00681613429c3169a91a0e05f844939890e9d3e215ed3e33c9b",
+      "size": 440245170
+    },
+    {
+      "file": "llama-b11808-bin-ubuntu-cuda-13.4-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11808/llama-b11808-bin-ubuntu-cuda-13.4-x64.tar.gz",
+      "sha256": "095d2f3aea6cf608244a44bab06763e34a70a0942f2e31294f4ea42d92a093a8",
+      "size": 158779986
+    }
   ]
 }

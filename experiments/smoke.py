@@ -71,7 +71,7 @@ try:
             assert color in response['choices'][0]['message']['content'].lower()
     record['scope'] = subprocess.check_output(['systemctl', '--user', 'show', p['scope'] + '.scope',
         '-p', 'MemoryHigh', '-p', 'MemoryMax', '-p', 'MemorySwapMax'], text=True)
-    assert 'MemoryHigh=6442450944' in record['scope'] and 'MemoryMax=8589934592' in record['scope'] and 'MemorySwapMax=0' in record['scope']
+    assert 'MemoryHigh=8589934592' in record['scope'] and 'MemoryMax=9663676416' in record['scope'] and 'MemorySwapMax=0' in record['scope']
     record['gpu'] = probes.gpu()
     record['stable'] = True
 finally:

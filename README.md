@@ -47,8 +47,10 @@ registration are available through the explicit commands below.
 All profiles use full layer offload, Flash Attention, one slot, Direct I/O loading,
 two checkpoints and 2 GiB RAM prompt cache. OpenCode thread naming can displace
 the main prompt and cause cache thrashing when the RAM cache is too small.
-Scopes use MemoryHigh=6G,
-MemoryMax=8G and MemorySwapMax=0; these limits apply to host RAM, not VRAM.
+Scopes throttle host memory above MemoryHigh=8G and use a hard MemoryMax=9G
+limit with MemorySwapMax=0. If memory cannot be reclaimed at the
+9 GiB limit, the scope's OOM killer terminates the offending process. These
+limits apply to host RAM, not VRAM.
 Qwen uses `--fit off`. Runtime upgrades require independent model validation.
 
 Swift15 also loads `mmproj-Swift-1.5-Qwen3.8-27B-F16.gguf` for image input.

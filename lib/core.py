@@ -115,7 +115,7 @@ def start(p):
     log_dir = ROOT / 'logs' / profile / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
     log_dir.mkdir(parents=True, exist_ok=False)
     args = ['systemd-run', '--user', '--scope', '--unit=' + p['scope'], '--collect',
-            '-p', 'MemoryHigh=6G', '-p', 'MemoryMax=8G', '-p', 'MemorySwapMax=0',
+            '-p', 'MemoryHigh=8G', '-p', 'MemoryMax=9G', '-p', 'MemorySwapMax=0',
             'bash', '-c', 'set -o pipefail; log=$1; shift; "$@" 2>&1 | tee -- "$log"',
             'llama-log', str(log_dir / 'server.log')] + command(p)
     print('Server log:', log_dir / 'server.log', flush=True)

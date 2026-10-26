@@ -33,8 +33,8 @@ Only one profile can use the default port at a time. Start refuses an occupied
 port or active profile scope. Servers bind `127.0.0.1:1235`; API base is
 `http://127.0.0.1:1235/v1`. Existing model aliases are preserved:
 `swift-1.5-qwen3.8-27b-iq3s-mtp` and `qwen3.6-35b-a3b-iq3s-dflash`.
-Select the alias for the running profile in your client. OpenCode registration
-is available through the explicit command below.
+Select the alias for the running profile in your client. OpenCode and PI
+registration are available through the explicit commands below.
 
 | Profile | Runtime | Context | KV | Batch/microbatch | Speculation |
 | --- | --- | ---: | --- | --- | --- |
@@ -221,6 +221,84 @@ config, and replaces it atomically while preserving permissions. Invalid JSONC,
 duplicate keys and detected concurrent edits cause refusal. `--dry-run` writes
 nothing, including backups and directories. Only the selected config is edited;
 there is no chezmoi integration. To undo an edit, restore the printed backup.
+
+## PI registration
+
+```bash
+python3 llama.py pi add bolt35 --dry-run
+python3 llama.py pi add bolt35
+pi --list-models llama-local
+# Start Bolt before requesting inference:
+./start_bolt35.sh
+# From another terminal:
+pi --provider llama-local --model nemotron-3.5-bolt-e4b-q4km-dflash \
+  --thinking off --no-session --no-tools --print \
+  'Reply with exactly these two words and nothing else: hello world'
+```
+
+`pi add PROFILE` supports every profile and registers the existing API alias
+under `providers["llama-local"].models` in `~/.pi/agent/models.json`, or
+`$PI_CODING_AGENT_DIR/models.json` when that environment variable is set.
+The separate provider does not use PI's built-in llama.cpp router or its model
+management. Registration requires neither weights nor GPU access and does not
+start a server, change default selections, or edit settings, authentication,
+extensions or permission policies. All profiles can be listed together; start
+the matching profile before requesting inference.
+
+`--config PATH`, `--dry-run`, `--update`, `--context`, `--port`, and
+`--output-tokens` follow the OpenCode registration semantics above. Output defaults
+to 8192 tokens; context and port honor the profile's environment overrides, with
+CLI arguments taking precedence. These are advertised limits, so launch the
+server with matching overrides. Swift advertises text and image input; other
+profiles advertise text input. The OpenAI chat-completions adapter uses
+`max_tokens` and a system role. Thinking uses `chat_template_kwargs.enable_thinking`:
+`--thinking off` disables it and `--thinking high` enables it. Intermediate effort
+levels, xhigh and max are not advertised as separate capabilities. Sampling is
+left to the server; OpenCode effort presets are not copied into PI.
+
+PI uses strict JSON, with a model array merged by `id`. Unrelated providers,
+models, custom fields and existing provider credentials are preserved; a new
+provider gets a dummy local API key. Identical registration is a no-op. Conflicting
+managed fields require `--update`; changing the shared provider's `baseUrl`
+affects all models inheriting it. Invalid JSON, duplicate keys/model IDs, and
+detected concurrent edits are refused. Other JSON text is preserved, although
+the selected provider's model array is reformatted when changed. Actual edits
+print a diff and create a unique backup beside the config before atomic
+replacement, preserving permissions. Restore the printed backup to undo an edit.
+Dry runs write nothing, including backups and directories.
+
+Test PI against an already running matching server:
+
+```bash
+python3 experiments/pi_smoke.py bolt35
+# Match server overrides if applicable:
+python3 experiments/pi_smoke.py bolt35 --port 1236 --context 32768
+```
+
+The smoke runner never starts or stops a server. It uses a temporary working
+directory and PI agent directory, registers through the actual CLI, verifies
+discovery, and checks streamed text, thinking off/on, and a successful read-tool
+round trip with a random file token. Swift also checks locally generated red/blue
+image attachments. It disables extensions, MCP, skills, project context, themes,
+startup network operations and session saving. Results and PI output go under
+ignored `logs/<profile>/pi-smoke-*/`; each PI invocation has a 180-second timeout
+by default (`--timeout N` overrides it). Run live checks sequentially. These
+checks validate the client transport and built-in read tool, not the user's
+permission extensions or interactive UI.
+
+Validated on 2026-10-26 with PI 1.4.0 and Bolt's pinned b11808 CUDA 13.4 runtime
+at the default 65536 context with DFlash enabled: the existing API smoke, PI model
+discovery, streaming, exact text output, thinking off/on and read-tool round trip
+passed. PI discovered generated entries for all five profiles; live PI inference
+for the other four profiles remains untested. The isolated PI check used a
+1024-token output allowance and short prompts, not a full-context workload.
+Evidence: ignored `logs/bolt35/smoke-20261026-112817/` and
+`logs/bolt35/pi-smoke-20261026T093141.550370Z/`. Bolt was also registered in the
+real PI model config, preserving the existing providers; an actual-config PI
+request returned exactly `hello world`. Its evidence is in ignored
+`logs/bolt35/pi-registered-13ffbab20f884693ba7213b204fea2af/`.
+Only uniquely owned Bolt trial scopes were started and stopped. No runtime pins
+or profile defaults changed.
 
 ## Artifacts
 

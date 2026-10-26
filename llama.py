@@ -5,7 +5,7 @@ import json
 import shlex
 import subprocess
 import sys
-from lib import core, opencode
+from lib import core, opencode, pi
 
 
 def main():
@@ -27,7 +27,20 @@ def main():
     add.add_argument('--update', action='store_true')
     for key in ('context', 'port', 'output-tokens'):
         add.add_argument('--' + key, type=int)
+    pi_cmd = sub.add_parser('pi', help='Manage PI model registration')
+    pi_sub = pi_cmd.add_subparsers(dest='pi_action', required=True)
+    pi_add = pi_sub.add_parser('add')
+    pi_add.add_argument('profile', choices=core.PROFILES)
+    pi_add.add_argument('--config', default=pi.default_config())
+    pi_add.add_argument('--dry-run', action='store_true')
+    pi_add.add_argument('--update', action='store_true')
+    for key in ('context', 'port', 'output-tokens'):
+        pi_add.add_argument('--' + key, type=int)
     args = parser.parse_args()
+    if args.action == 'pi':
+        pi.add(args.profile, args.config, args.dry_run, args.update,
+               args.context, args.port, args.output_tokens)
+        return
     if args.action == 'opencode':
         opencode.add(args.profile, args.config, args.dry_run, args.update,
                      args.context, args.port, args.output_tokens)

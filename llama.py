@@ -5,12 +5,23 @@ import json
 import shlex
 import subprocess
 import sys
-from lib import core, opencode, pi
+from lib import core, opencode, pi, swap
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='action', required=True)
+    swap_cmd = sub.add_parser('swap', help='Manage the optional two-model llama-swap coordinator')
+    swap_sub = swap_cmd.add_subparsers(dest='swap_action', required=True)
+    for action in ('install', 'config', 'start', 'status', 'stop', '_serve', '_cleanup'):
+        command = swap_sub.add_parser(action)
+        if action in ('config', 'start', '_serve'):
+            command.add_argument('--port', type=int, default=1235)
+            command.add_argument('--backend-port', type=int, default=1236)
+        if action in ('_serve', '_cleanup'):
+            command.add_argument('--token', required=True)
+        if action == '_serve':
+            command.add_argument('--run-dir', required=True)
     for action in ('install', 'verify', 'start', 'stop', 'status', 'smoke'):
         cmd = sub.add_parser(action)
         cmd.add_argument('profile', choices=core.PROFILES, nargs='?' if action == 'status' else None)
@@ -37,6 +48,18 @@ def main():
     for key in ('context', 'port', 'output-tokens'):
         pi_add.add_argument('--' + key, type=int)
     args = parser.parse_args()
+    if args.action == 'swap':
+        if args.swap_action == 'config':
+            print(swap.config(args.port, args.backend_port), end='')
+        elif args.swap_action == 'start':
+            swap.start(args.port, args.backend_port)
+        elif args.swap_action == '_serve':
+            swap.serve(args.token, args.run_dir, args.port, args.backend_port)
+        elif args.swap_action == '_cleanup':
+            swap.cleanup(args.token)
+        else:
+            getattr(swap, args.swap_action)()
+        return
     if args.action == 'pi':
         pi.add(args.profile, args.config, args.dry_run, args.update,
                args.context, args.port, args.output_tokens)

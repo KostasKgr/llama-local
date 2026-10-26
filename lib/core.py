@@ -84,6 +84,8 @@ def scope_active(p):
 
 
 def preflight(p):
+    from . import swap
+    swap.guard(p)
     args = command(p)
     if not os.access(args[0], os.X_OK):
         raise ValueError('Runtime missing; run install first')
@@ -124,6 +126,8 @@ def start(p):
 
 
 def stop(p):
+    from . import swap
+    swap.guard(p)
     subprocess.run(['systemctl', '--user', 'stop', p['scope'] + '.scope'], check=True, timeout=30)
 
 

@@ -302,6 +302,122 @@ request returned exactly `hello world`. Its evidence is in ignored
 Only uniquely owned Bolt trial scopes were started and stopped. No runtime pins
 or profile defaults changed.
 
+## On-demand Bolt and Swift with llama-swap
+
+The optional coordinator exposes exactly the existing Bolt and Swift aliases at
+`http://127.0.0.1:1235/v1`. Both backends share private port 1236. Only one model
+runs at a time: switching stops the current backend before starting the next.
+Other profiles remain available for manual launching and are not listed by swap.
+The coordinator does not load models at startup or unload them on an idle timer.
+
+```bash
+python3 llama.py swap install
+python3 llama.py swap config
+# After stopping your existing server yourself:
+python3 llama.py swap start
+python3 llama.py swap status
+python3 llama.py swap stop
+```
+
+`install` downloads llama-swap v267 for Linux x86_64 from its
+[release](https://github.com/mostlygeek/llama-swap/releases/tag/v267), pinned by
+size and SHA-256 in `manifests/llama-swap.json`. Archives and the installed binary
+stay in ignored `downloads/` and `runtimes/`. It does not install model artifacts;
+install and verify `bolt35` and `swift15` separately using the existing commands.
+
+`config` prints the resolved YAML using JSON syntax (valid YAML), without writing
+anything or starting a server. `config` and `start` accept `--port` and
+`--backend-port`; they must differ. For example:
+
+```bash
+python3 llama.py swap config --port 1235 --backend-port 1236
+```
+
+Each entry uses `llama.py start PROFILE --port 1236` as `cmd` and
+`llama.py stop PROFILE` as `cmdStop`. Existing runtime pins, model parameters,
+Swift's projector and MTP, Bolt's DFlash, scope memory limits and server logs are
+preserved. Profile environment overrides still apply, except the backend port and
+scope are explicitly selected. The same Linux user must have access to the user
+systemd manager and the installed artifacts.
+
+`start` launches a transient user service, `llama-local-swap.service`, and prints
+the coordinator log path. Startup is asynchronous; use `status`, `/health` and
+the log to check readiness. The first inference request loads its requested model.
+`/v1/models` lists both aliases even before they are loaded. Existing OpenCode and
+PI entries for those aliases need no change when using the default public port.
+Other previously registered models are not served by this endpoint.
+
+The built-in dashboard is at `http://127.0.0.1:1235/ui/`, with model load/unload
+controls, logs, a chat playground and performance statistics. Under WSL, the
+coordinator adds `/usr/lib/wsl/lib` to its subprocess PATH when that directory
+exists, allowing GPU monitoring to find `nvidia-smi`. Existing PATH entries keep
+their precedence. Launcher changes take effect on the next coordinator start.
+
+The existing `bolt35.scope` and `swift15.scope` names are reused. Startup refuses
+occupied public/backend ports, either active profile scope, another coordinator
+or pending cleanup. During coordinator ownership, ordinary manual start/stop of
+these two production profiles refuses; use `swap stop` before manual operation.
+Startup never stops a pre-existing server. Other-model launchers are not a global
+GPU scheduler; do not start competing GPU workloads while using swap.
+
+The service's `ExecStopPost` stops its reserved profile scopes after shutdown,
+including coordinator failure. A per-instance ownership marker prevents cleanup
+from an older instance stopping a newer one, and a lock prevents duplicate
+coordinators. If cleanup fails, the marker remains and subsequent startup refuses;
+`swap stop` retries cleanup. Use `journalctl --user -u llama-local-swap.service`
+for service-level failures. The transient service is not enabled at login and does
+not automatically restart. Roll back by running `swap stop` and using the existing
+manual launch commands.
+
+Generated config, coordinator logs and ownership state live under ignored
+`logs/swap/`. Model server logs remain under `logs/bolt35/` and `logs/swift15/`.
+Keep the active ownership marker and lock file intact while the coordinator runs.
+Model switches reload weights and discard backend in-memory prompt/KV caches;
+clients must allow for cold-load latency. Loading uses a 300-second readiness
+timeout and unloading a 40-second graceful timeout. The pinned proxy scheduler
+waits for active requests before swapping and may batch requests for the current
+model to reduce switching. No additional request concurrency cap is imposed;
+the model profiles retain their single-slot configuration.
+
+After `swap install`, the normal unit suite also exercises the actual pinned
+proxy with temporary CPU-only HTTP fixtures: two-model discovery, no preload,
+one shared backend port, Bolt/Swift/Bolt routing, active-request draining,
+tool/thinking/image payload forwarding and custom stop-command cleanup. This
+also checks a temporary user service with fake backends: killing the supervisor
+runs `ExecStopPost`, clears its ownership marker and leaves no fake backend.
+It does not establish real-model correctness or real model-scope cleanup on the GPU.
+
+When the GPU and both ports are free, run sequentially:
+
+```bash
+python3 llama.py smoke bolt35
+python3 llama.py smoke swift15
+python3 experiments/swap_smoke.py
+```
+
+The swap smoke refuses an active coordinator or more than 2 GiB of GPU use. It
+uses unique trial scopes, checks both aliases before loading, Bolt/Swift/Bolt
+switches, one active backend and scope memory limits, Swift red/blue image input,
+and Bolt's existing thinking, streaming and tool-round-trip checks through the
+proxy. It records request durations including loading (not isolated load times)
+and cleans up only its trial scopes. Results live in ignored `logs/swap/smoke-*/`.
+It does not exercise the production coordinator service or full-context quality.
+
+Validated on 2026-10-26 with the pinned v267 proxy and unchanged profile runtimes:
+both sequential per-profile smokes passed; the swap smoke passed discovery,
+Bolt/Swift/Bolt switching, scope limits, Swift image input and Bolt API checks.
+The three switch requests took 9.96, 7.88 and 5.74 seconds respectively, including
+loading and inference; these are single observations, not a latency benchmark.
+A separate production-service check passed the same model sequence, manual
+start/stop reservation and duplicate-start refusal, normal shutdown, and forced
+supervisor termination with real model-scope cleanup. All test-owned servers were
+stopped afterward. Evidence is in ignored
+`logs/swap/smoke-20261026T141323.517207Z/`,
+`logs/swap/service-check-6925c44d52a5457abd3d554dd5f82cc7/`,
+`logs/bolt35/smoke-20261026-161424/` and
+`logs/swift15/smoke-20261026-161430/`. These checks do not establish full-context
+quality, long-running scheduling fairness or recovery from a systemd manager crash.
+
 ## Artifacts
 
 `manifests/` contains pinned URLs, hashes and known sizes. Interrupted downloads

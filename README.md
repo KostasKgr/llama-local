@@ -247,6 +247,13 @@ start a server, change default selections, or edit settings, authentication,
 extensions or permission policies. All profiles can be listed together; start
 the matching profile before requesting inference.
 
+The provider's `baseUrl` is read from `LLAMA_PI_BASE_URL` in the git-ignored
+`.env` file at the repository root (template in the committed `.env.sample`);
+when unset, registration targets the local server at
+`http://127.0.0.1:<port>/v1`. The URL value is never committed. A configured
+URL applies to every model under the shared `llama-local` provider, so
+register each profile against the endpoint that serves it.
+
 `--config PATH`, `--dry-run`, `--update`, `--context`, `--port`, and
 `--output-tokens` follow the OpenCode registration semantics above. Output defaults
 to 8192 tokens; context and port honor the profile's environment overrides, with

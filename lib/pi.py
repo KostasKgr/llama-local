@@ -8,10 +8,35 @@ from . import core, jsonc
 from .opencode import write_config
 
 PROVIDER = 'llama-local'
+ENV_KEY = 'LLAMA_PI_BASE_URL'
 
 
 def default_config():
     return str(Path(os.environ.get('PI_CODING_AGENT_DIR', '~/.pi/agent')) / 'models.json')
+
+
+def load_env_file(path=None):
+    path = Path(path) if path is not None else core.ROOT / '.env'
+    if not path.is_file():
+        return {}
+    values = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, _, value = line.partition('=')
+        values[key.strip()] = value.strip()
+    return values
+
+
+def resolve_base_url(profile, env_values=None):
+    value = (env_values if env_values is not None else load_env_file()).get(ENV_KEY, '').strip()
+    if not value:
+        return f'http://127.0.0.1:{profile["port"]}/v1'
+    value = value.rstrip('/')
+    if not (value.startswith('http://') or value.startswith('https://')):
+        raise ValueError(f'{ENV_KEY} must be an absolute http(s) URL')
+    return value
 
 
 def model_config(profile, output_tokens=None):
@@ -55,8 +80,9 @@ def model_config(profile, output_tokens=None):
     return model
 
 
-def merge(source, profile, output_tokens=None, update=False):
+def merge(source, profile, output_tokens=None, update=False, base_url=None):
     # PI reads strict JSON. The span parser also rejects duplicate object keys.
+    base = f'http://127.0.0.1:{profile["port"]}/v1' if base_url is None else base_url
     existing = jsonc.parse(source).value
     json.loads(source)
     providers = existing.get('providers', {})
@@ -100,10 +126,10 @@ def merge(source, profile, output_tokens=None, update=False):
         if 'api' in current:
             desired['api'] = 'openai-completions'
         if 'baseUrl' in current:
-            desired['baseUrl'] = f'http://127.0.0.1:{profile["port"]}/v1'
+            desired['baseUrl'] = base
         combine(current, desired, ['models', profile['alias']])
     wanted = {
-        'baseUrl': f'http://127.0.0.1:{profile["port"]}/v1',
+        'baseUrl': base,
         'api': 'openai-completions',
     }
     for key, value in wanted.items():
@@ -125,10 +151,11 @@ def merge(source, profile, output_tokens=None, update=False):
 
 def add(name, config, dry_run=False, update=False, context=None, port=None, output_tokens=None):
     profile = core.load(name, {'context': context, 'port': port})
+    base = resolve_base_url(profile)
     path = Path(config).expanduser().resolve()
     original = path.read_bytes() if path.exists() else None
     source = original.decode('utf-8') if original is not None else '{}\n'
-    updated = merge(source, profile, output_tokens, update)
+    updated = merge(source, profile, output_tokens, update, base)
     if updated == source:
         print(f'Already registered: {PROVIDER}/{profile["alias"]}')
         return

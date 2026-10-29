@@ -122,7 +122,8 @@ class PiRegistrationTests(unittest.TestCase):
                 pi.model_config(profile, output)
 
     def test_dry_run_backup_permissions_and_noop(self):
-        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()):
+        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()), \
+                patch('lib.pi.load_env_file', return_value={}):
             path = Path(temp) / 'nested/models.json'
             pi.add('bolt35', path, dry_run=True)
             self.assertFalse(path.parent.exists())
@@ -142,7 +143,8 @@ class PiRegistrationTests(unittest.TestCase):
             self.assertEqual(list(path.parent.glob('*.backup-*')), backups)
 
     def test_concurrent_change_and_failed_replace(self):
-        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()):
+        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()), \
+                patch('lib.pi.load_env_file', return_value={}):
             path = Path(temp) / 'models.json'
             path.write_text('{}')
             with self.assertRaisesRegex(ValueError, 'changed'):
@@ -164,6 +166,59 @@ class PiRegistrationTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             config = json.loads((Path(temp) / 'models.json').read_text())
             self.assertEqual(config['providers'][pi.PROVIDER]['models'][0]['id'], core.load('bolt35')['alias'])
+
+
+class PiEnvBaseUrlTests(unittest.TestCase):
+    def test_env_file_parser(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / '.env'
+            self.assertEqual(pi.load_env_file(path), {})
+            path.write_text(
+                '# comment\n'
+                '\n'
+                'LLAMA_PI_BASE_URL = https://first.example/v1\n'
+                'OTHER=value\n'
+                'not a pair\n'
+                'LLAMA_PI_BASE_URL=https://second.example/v1/\n')
+            self.assertEqual(pi.load_env_file(path),
+                             {'LLAMA_PI_BASE_URL': 'https://second.example/v1/', 'OTHER': 'value'})
+
+    def test_resolve_base_url_fallback_and_validation(self):
+        profile = core.load('bolt35')
+        self.assertEqual(pi.resolve_base_url(profile, {}), 'http://127.0.0.1:1235/v1')
+        self.assertEqual(pi.resolve_base_url(profile, {'LLAMA_PI_BASE_URL': '  '}),
+                         'http://127.0.0.1:1235/v1')
+        self.assertEqual(pi.resolve_base_url(profile, {'LLAMA_PI_BASE_URL': 'https://a.example/v1/'}),
+                         'https://a.example/v1')
+        for bad in ('relative/v1', 'a.example/v1', 'ftp://a.example/v1'):
+            with self.subTest(bad), self.assertRaises(ValueError):
+                pi.resolve_base_url(profile, {'LLAMA_PI_BASE_URL': bad})
+
+    def test_merge_with_configured_base_url(self):
+        profile = core.load('bolt35')
+        base = pi.resolve_base_url(profile, {'LLAMA_PI_BASE_URL': 'https://models.example/v1'})
+        result = pi.merge('{}', profile, base_url=base)
+        provider = json.loads(result)['providers'][pi.PROVIDER]
+        self.assertEqual(provider['baseUrl'], 'https://models.example/v1')
+        # The same configured URL is a no-op, not a conflict.
+        self.assertEqual(pi.merge(result, profile, base_url=base), result)
+        with self.assertRaisesRegex(ValueError, 'baseUrl'):
+            pi.merge(result, profile, base_url='https://other.example/v1')
+        updated = json.loads(pi.merge(result, profile, base_url='https://other.example/v1', update=True))
+        self.assertEqual(updated['providers'][pi.PROVIDER]['baseUrl'], 'https://other.example/v1')
+
+    def test_add_reads_env_file(self):
+        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()):
+            path = Path(temp) / 'models.json'
+            with patch('lib.pi.load_env_file',
+                       return_value={'LLAMA_PI_BASE_URL': 'https://env.example/v1'}):
+                pi.add('bolt35', path)
+            config = json.loads(path.read_text())
+            self.assertEqual(config['providers'][pi.PROVIDER]['baseUrl'], 'https://env.example/v1')
+            # Without the configured URL, the local default conflicts with it.
+            with patch('lib.pi.load_env_file', return_value={}):
+                with self.assertRaisesRegex(ValueError, 'baseUrl'):
+                    pi.add('bolt35', path)
 
 
 class PiSmokeAssertionsTests(unittest.TestCase):

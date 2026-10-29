@@ -65,7 +65,7 @@ class CoreTests(unittest.TestCase):
     def test_bolt_preflight_independent_artifacts(self):
         p = core.load('bolt35')
         available = {core.ROOT / 'models' / p[k] for k in ('model', 'draft')}
-        with patch('lib.core.os.access', return_value=True), \
+        with patch('lib.swap.guard'), patch('lib.core.os.access', return_value=True), \
                 patch.object(Path, 'is_file', autospec=True, side_effect=lambda path: path in available), \
                 patch('lib.core.socket.socket') as sock, patch.object(core, 'scope_active', return_value=False):
             sock.return_value.__enter__.return_value.connect_ex.return_value = 1
@@ -133,7 +133,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(args[args.index('--mmproj') + 1], str(projector))
         for name in ('qwen36', 'bonsai2', 'bonsai2mtp'):
             self.assertNotIn('--mmproj', core.command(core.load(name)))
-        with patch('lib.core.os.access', return_value=True), \
+        with patch('lib.swap.guard'), patch('lib.core.os.access', return_value=True), \
                 patch.object(Path, 'is_file', autospec=True,
                              side_effect=lambda path: path != projector), \
                 patch('lib.core.socket.socket') as sock, patch.object(core, 'scope_active') as active:
@@ -163,7 +163,8 @@ class CoreTests(unittest.TestCase):
             sock.bind(('127.0.0.1', 0))
             sock.listen()
             p = core.load('swift15', {'port': sock.getsockname()[1]})
-            with patch('lib.core.os.access', return_value=True), patch.object(Path, 'is_file', return_value=True), patch('lib.core.scope_active') as active:
+            with patch('lib.swap.guard'), patch('lib.core.os.access', return_value=True), \
+                    patch.object(Path, 'is_file', return_value=True), patch('lib.core.scope_active') as active:
                 with self.assertRaisesRegex(ValueError, 'occupied'):
                     core.preflight(p)
                 active.assert_not_called()

@@ -66,13 +66,34 @@ class PiRegistrationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'baseUrl'):
             pi.merge(result, core.load('bolt35'))
 
-    def test_binary_thinking_not_opencode_effort_settings(self):
-        model = pi.model_config(core.load('swift15'))
+    def test_binary_thinking_without_opencode_effort_presets(self):
+        model = pi.model_config(core.load('bolt35'))
         self.assertEqual(model['compat']['chatTemplateKwargs'],
                          {'enable_thinking': {'$var': 'thinking.enabled'}})
         self.assertFalse(model['compat']['supportsReasoningEffort'])
         self.assertIsNone(model['thinkingLevelMap']['xhigh'])
         self.assertNotIn('settings', model)
+
+    def test_swift_efforts_match_opencode_and_update_binary_registration(self):
+        profile = core.load('swift15')
+        model = pi.model_config(profile)
+        self.assertEqual(model['thinkingLevelMap'], {
+            'off': 'none', 'minimal': None, 'low': 'low', 'medium': 'medium',
+            'high': None, 'xhigh': 'xhigh', 'max': None,
+        })
+        self.assertTrue(model['compat']['supportsReasoningEffort'])
+        self.assertEqual(model['compat']['thinkingFormat'], 'openai')
+        old = copy.deepcopy(model)
+        old['compat'].update(supportsReasoningEffort=False, thinkingFormat='chat-template',
+                             chatTemplateKwargs={'enable_thinking': {'$var': 'thinking.enabled'}})
+        old['thinkingLevelMap'].update(low=None, medium=None, high='high', xhigh=None)
+        source = json.dumps({'providers': {pi.PROVIDER: {'models': [old]}}})
+        with self.assertRaisesRegex(ValueError, '--update'):
+            pi.merge(source, profile)
+        updated = json.loads(pi.merge(source, profile, update=True))
+        actual = updated['providers'][pi.PROVIDER]['models'][0]
+        self.assertEqual(actual['thinkingLevelMap'], model['thinkingLevelMap'])
+        self.assertEqual(actual['compat']['thinkingFormat'], 'openai')
 
     def test_model_transport_overrides_cannot_silently_redirect_registration(self):
         profile = core.load('bolt35')

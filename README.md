@@ -253,10 +253,15 @@ to 8192 tokens; context and port honor the profile's environment overrides, with
 CLI arguments taking precedence. These are advertised limits, so launch the
 server with matching overrides. Swift advertises text and image input; other
 profiles advertise text input. The OpenAI chat-completions adapter uses
-`max_tokens` and a system role. Thinking uses `chat_template_kwargs.enable_thinking`:
+`max_tokens` and a system role. Swift matches OpenCode's explicit effort presets:
+PI's off/low/medium/xhigh send `reasoning_effort` none/low/medium/xhigh respectively.
+Update an older binary-only registration with `python3 llama.py pi add swift15 --update`.
+To default Swift to xhigh, set `modelThinkingLevels["llama-local/swift-1.5-qwen3.8-27b-iq3s-mtp"]`
+to `"xhigh"` in PI's `settings.json`; registration does not edit settings.
+Other profiles use `chat_template_kwargs.enable_thinking`:
 `--thinking off` disables it and `--thinking high` enables it. Intermediate effort
-levels, xhigh and max are not advertised as separate capabilities. Sampling is
-left to the server; OpenCode effort presets are not copied into PI.
+levels, xhigh and max are not advertised for those binary-only profiles. Sampling is
+left to the server.
 
 PI uses strict JSON, with a model array merged by `id`. Unrelated providers,
 models, custom fields and existing provider credentials are preserved; a new

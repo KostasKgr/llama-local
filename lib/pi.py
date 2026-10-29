@@ -39,6 +39,19 @@ def model_config(profile, output_tokens=None):
             'minimal': None, 'low': None, 'medium': None, 'high': 'high',
             'xhigh': None, 'max': None,
         }
+        efforts = {variant['reasoningEffort']
+                   for variant in metadata.get('variants', {}).values()
+                   if 'reasoningEffort' in variant}
+        if efforts:
+            # Match explicit OpenCode presets through the same wire parameter.
+            model['thinkingLevelMap'] = {
+                'off': 'none' if 'none' in efforts else None,
+                **{level: level if level in efforts else None
+                   for level in ('minimal', 'low', 'medium', 'high', 'xhigh', 'max')},
+            }
+            model['compat']['supportsReasoningEffort'] = True
+            model['compat']['thinkingFormat'] = 'openai'
+            del model['compat']['chatTemplateKwargs']
     return model
 
 

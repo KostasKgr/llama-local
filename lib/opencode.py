@@ -9,6 +9,7 @@ import tempfile
 from . import core, jsonc
 
 PROVIDER = 'llama.cpp'
+ENV_KEY = 'LLAMA_OPENCODE_BASE_URL'
 
 
 @contextmanager
@@ -39,10 +40,11 @@ def model_config(profile, output_tokens=None):
     return model
 
 
-def merge(source, profile, output_tokens=None, update=False):
+def merge(source, profile, output_tokens=None, update=False, base_url=None):
+    base = f"http://127.0.0.1:{profile['port']}/v1" if base_url is None else base_url
     desired = {
         'package': '@opencode/ai/providers/openai-compatible',
-        'settings': {'baseURL': f"http://127.0.0.1:{profile['port']}/v1"},
+        'settings': {'baseURL': base},
         'models': {profile['alias']: model_config(profile, output_tokens)},
     }
     existing = jsonc.parse(source).value
@@ -113,10 +115,11 @@ def write_config(path, original, updated):
 
 def add(name, config, dry_run=False, update=False, context=None, port=None, output_tokens=None):
     profile = core.load(name, {'context': context, 'port': port})
+    base = core.resolve_base_url(profile, ENV_KEY)
     path = Path(config).expanduser().resolve()
     original = path.read_bytes() if path.exists() else None
     source = original.decode('utf-8') if original is not None else '{}\n'
-    updated = merge(source, profile, output_tokens, update)
+    updated = merge(source, profile, output_tokens, update, base)
     if updated == source:
         print(f"Already registered: {PROVIDER}/{profile['alias']}")
         return

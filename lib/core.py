@@ -46,6 +46,30 @@ def load(name, overrides=None):
     return p
 
 
+def load_env_file(path=None):
+    path = Path(path) if path is not None else ROOT / '.env'
+    if not path.is_file():
+        return {}
+    values = {}
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, _, value = line.partition('=')
+        values[key.strip()] = value.strip()
+    return values
+
+
+def resolve_base_url(profile, env_key, env_values=None):
+    value = (env_values if env_values is not None else load_env_file()).get(env_key, '').strip()
+    if not value:
+        return f'http://127.0.0.1:{profile["port"]}/v1'
+    value = value.rstrip('/')
+    if not (value.startswith('http://') or value.startswith('https://')):
+        raise ValueError(f'{env_key} must be an absolute http(s) URL')
+    return value
+
+
 def command(p):
     server = ROOT / 'runtimes' / p['runtime'] / 'llama-server'
     # OpenCode thread naming can displace the main prompt and cause cache thrashing;

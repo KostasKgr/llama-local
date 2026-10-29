@@ -15,30 +15,6 @@ def default_config():
     return str(Path(os.environ.get('PI_CODING_AGENT_DIR', '~/.pi/agent')) / 'models.json')
 
 
-def load_env_file(path=None):
-    path = Path(path) if path is not None else core.ROOT / '.env'
-    if not path.is_file():
-        return {}
-    values = {}
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith('#') or '=' not in line:
-            continue
-        key, _, value = line.partition('=')
-        values[key.strip()] = value.strip()
-    return values
-
-
-def resolve_base_url(profile, env_values=None):
-    value = (env_values if env_values is not None else load_env_file()).get(ENV_KEY, '').strip()
-    if not value:
-        return f'http://127.0.0.1:{profile["port"]}/v1'
-    value = value.rstrip('/')
-    if not (value.startswith('http://') or value.startswith('https://')):
-        raise ValueError(f'{ENV_KEY} must be an absolute http(s) URL')
-    return value
-
-
 def model_config(profile, output_tokens=None):
     metadata = profile['opencode']
     output = metadata['output_tokens'] if output_tokens is None else output_tokens
@@ -151,7 +127,7 @@ def merge(source, profile, output_tokens=None, update=False, base_url=None):
 
 def add(name, config, dry_run=False, update=False, context=None, port=None, output_tokens=None):
     profile = core.load(name, {'context': context, 'port': port})
-    base = resolve_base_url(profile)
+    base = core.resolve_base_url(profile, ENV_KEY)
     path = Path(config).expanduser().resolve()
     original = path.read_bytes() if path.exists() else None
     source = original.decode('utf-8') if original is not None else '{}\n'

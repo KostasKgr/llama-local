@@ -208,6 +208,11 @@ do not change the server. Output defaults to 8192 tokens for all profiles.
 Context and port also honor the existing profile environment overrides. Display names describe the
 profile's default context; the numeric `limit.context` reflects overrides.
 
+The provider's `baseURL` is read from `LLAMA_OPENCODE_BASE_URL` in the
+git-ignored `.env` file at the repository root (template in the committed
+`.env.sample`); when unset, registration targets the local server at
+`http://127.0.0.1:<port>/v1`. The URL value is never committed.
+
 JSONC comments, trailing commas and unrelated text are preserved. Identical
 registration is a no-op. Missing fields are added, existing custom fields and
 variants are retained, and conflicting managed fields require `--update`.

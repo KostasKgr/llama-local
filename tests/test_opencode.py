@@ -140,7 +140,8 @@ class OpenCodeTests(unittest.TestCase):
         self.assertEqual(jsonc.parse(result).value['a'], jsonc.parse(source).value['a'])
 
     def test_dry_run_backup_atomic_and_noop(self):
-        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()):
+        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()), \
+                patch('lib.core.load_env_file', return_value={}):
             path = Path(temp) / 'opencode.jsonc'
             source = b'{"custom":true}\n'
             path.write_bytes(source)
@@ -171,7 +172,8 @@ class OpenCodeTests(unittest.TestCase):
             self.assertEqual(list(path.parent.glob('.config*')), [])
 
     def test_missing_config_and_output_limits(self):
-        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()):
+        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()), \
+                patch('lib.core.load_env_file', return_value={}):
             path = Path(temp) / 'nested/config.jsonc'
             opencode.add('qwen36', path, dry_run=True)
             self.assertFalse(path.parent.exists())
@@ -180,3 +182,45 @@ class OpenCodeTests(unittest.TestCase):
         for output in [0, -1, 131073]:
             with self.assertRaises(ValueError):
                 opencode.model_config(self.profile, output)
+
+
+class OpenCodeEnvBaseUrlTests(unittest.TestCase):
+    def test_resolve_base_url_with_opencode_key(self):
+        profile = core.load('qwen36')
+        self.assertEqual(core.resolve_base_url(profile, opencode.ENV_KEY, {}),
+                         'http://127.0.0.1:1235/v1')
+        self.assertEqual(core.resolve_base_url(profile, opencode.ENV_KEY,
+                                               {'LLAMA_OPENCODE_BASE_URL': 'https://a.example/v1/'}),
+                         'https://a.example/v1')
+        for bad in ('relative/v1', 'a.example/v1', 'ftp://a.example/v1'):
+            with self.subTest(bad), self.assertRaises(ValueError):
+                core.resolve_base_url(profile, opencode.ENV_KEY, {'LLAMA_OPENCODE_BASE_URL': bad})
+
+    def test_merge_with_configured_base_url(self):
+        profile = core.load('qwen36')
+        base = core.resolve_base_url(profile, opencode.ENV_KEY,
+                                     {'LLAMA_OPENCODE_BASE_URL': 'https://models.example/v1'})
+        result = opencode.merge('{}', profile, base_url=base)
+        provider = jsonc.parse(result).value['providers']['llama.cpp']
+        self.assertEqual(provider['settings']['baseURL'], 'https://models.example/v1')
+        # The same configured URL is a no-op, not a conflict.
+        self.assertEqual(opencode.merge(result, profile, base_url=base), result)
+        with self.assertRaisesRegex(ValueError, 'baseURL'):
+            opencode.merge(result, profile, base_url='https://other.example/v1')
+        updated = opencode.merge(result, profile, base_url='https://other.example/v1', update=True)
+        self.assertEqual(jsonc.parse(updated).value['providers']['llama.cpp']['settings']['baseURL'],
+                         'https://other.example/v1')
+
+    def test_add_reads_env_file(self):
+        with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()):
+            path = Path(temp) / 'opencode.jsonc'
+            with patch('lib.core.load_env_file',
+                       return_value={'LLAMA_OPENCODE_BASE_URL': 'https://env.example/v1'}):
+                opencode.add('qwen36', path)
+            config = jsonc.parse(path.read_text()).value
+            self.assertEqual(config['providers']['llama.cpp']['settings']['baseURL'],
+                             'https://env.example/v1')
+            # Without the configured URL, the local default conflicts with it.
+            with patch('lib.core.load_env_file', return_value={}):
+                with self.assertRaisesRegex(ValueError, 'baseURL'):
+                    opencode.add('qwen36', path)

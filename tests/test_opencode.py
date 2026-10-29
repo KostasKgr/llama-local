@@ -139,6 +139,17 @@ class OpenCodeTests(unittest.TestCase):
         result = jsonc.set_value(source, ['new'], 1)
         self.assertEqual(jsonc.parse(result).value['a'], jsonc.parse(source).value['a'])
 
+    def test_set_value_pretty_prints_container_replacements(self):
+        source = '{\n  "a": {"x": [1, 2, 3]},\n  "b": 1\n}\n'
+        big = [{'id': f'm{i}', 'settings': {'temperature': i / 10}} for i in range(10)]
+        result = jsonc.set_value(source, ['a', 'x'], big)
+        self.assertLess(max(len(line) for line in result.splitlines()), 100)
+        self.assertEqual(jsonc.parse(result).value['a']['x'], big)
+        self.assertIn('\n  "b": 1\n', result)
+        # Scalars stay compact and unrelated bytes are preserved.
+        self.assertEqual(jsonc.set_value(source, ['b'], 2),
+                         '{\n  "a": {"x": [1, 2, 3]},\n  "b": 2\n}\n')
+
     def test_dry_run_backup_atomic_and_noop(self):
         with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()), \
                 patch('lib.core.load_env_file', return_value={}):

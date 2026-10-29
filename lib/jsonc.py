@@ -130,7 +130,15 @@ def set_value(source, path, value):
             parse(result)
             return result
         node = node.children[key]
-    rendered = json.dumps(value, ensure_ascii=False)
+    newline = '\r\n' if '\r\n' in source else '\n'
+    if isinstance(value, (dict, list)):
+        # Replaced containers are pretty printed like new ones. The node's line
+        # indent is its key's column, which is the base for the rendered lines.
+        line_start = source.rfind('\n', 0, node.start) + 1
+        indent = re.match(r'[ \t]*', source[line_start:]).group()
+        rendered = json.dumps(value, indent=2, ensure_ascii=False).replace('\n', newline + indent)
+    else:
+        rendered = json.dumps(value, ensure_ascii=False)
     result = source[:node.start] + rendered + source[node.end:]
     parse(result)
     return result

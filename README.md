@@ -280,8 +280,9 @@ models, custom fields and existing provider credentials are preserved; a new
 provider gets a dummy local API key. Identical registration is a no-op. Conflicting
 managed fields require `--update`; changing the shared provider's `baseUrl`
 affects all models inheriting it. Invalid JSON, duplicate keys/model IDs, and
-detected concurrent edits are refused. Other JSON text is preserved, although
-the selected provider's model array is reformatted when changed. Actual edits
+detected concurrent edits are refused. Other JSON text is preserved, and the
+selected provider's model array is pretty printed with two-space indentation
+when changed. Actual edits
 print a diff and create a unique backup beside the config before atomic
 replacement, preserving permissions. Restore the printed backup to undo an edit.
 Dry runs write nothing, including backups and directories.

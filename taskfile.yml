@@ -1,0 +1,27 @@
+version: '3'
+
+# Keep parallel verification output readable.
+output: group
+
+tasks:
+  agent:verify:
+    desc: Run the verification checks expected by AGENTS.md.
+    # Dependencies run in parallel.
+    deps:
+      - compile
+      - shell-syntax
+    # Commands run after dependencies complete.
+    cmds:
+      - task: test
+
+  test:
+    cmds:
+      - python3 -m unittest discover -s tests -v
+
+  compile:
+    cmds:
+      - python3 -m compileall -q llama.py lib experiments tests
+
+  shell-syntax:
+    cmds:
+      - bash -n start_swift15_iq3s_128k.sh start_qwen36.sh start_bonsai2.sh start_bonsai2_mtp.sh start_bolt35.sh

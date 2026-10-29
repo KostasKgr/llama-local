@@ -587,11 +587,19 @@ consolidated Git history until rollback has been verified.
 ## Validation
 
 ```bash
+task agent:verify
+```
+
+This runs, from `taskfile.yml`:
+
+```bash
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q llama.py lib experiments tests
 bash -n start_swift15_iq3s_128k.sh start_qwen36.sh start_bonsai2.sh start_bonsai2_mtp.sh start_bolt35.sh
-git diff --check
 ```
+
+Before committing, `git diff --check` optionally flags whitespace errors and
+conflict markers in unstaged changes.
 
 Live smoke checks verify each profile's default context loading, health, model
 alias, chat and scope limits, plus image recognition for profiles with `mmproj`.

@@ -2,8 +2,8 @@
 
 One WSL/Linux repository for Swift 1.5 IQ3_S MTP, Qwen3.6 IQ3_S DFlash,
 Ternary Bonsai 2 9B Q2_0 (without speculation), and Nemotron 3.5 Bolt E4B DFlash.
-Each profile pins its own llama.cpp prebuilt runtime (CUDA 12.8 for existing
-profiles, CUDA 13.4 for Bolt). No source
+Each profile pins its own llama.cpp prebuilt runtime (CUDA 13.4 for Swift and
+Bolt, CUDA 12.8 for the others). No source
 build, CUDA toolkit installation, or driver changes are required.
 An optional Bonsai MTP profile uses the PrismML fork and an embedded prediction head.
 
@@ -38,7 +38,7 @@ registration are available through the explicit commands below.
 
 | Profile | Runtime | Context | KV | Batch/microbatch | Speculation |
 | --- | --- | ---: | --- | --- | --- |
-| swift15 | b11393 | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
+| swift15 | b12001 CUDA 13.4 | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
 | qwen36 | b11433 | 131072 | f16/f16 | 4096/2048 | separate DFlash, max 8 |
 | bonsai2 | b11669 | 131072 | f16/f16 | 2048/512 | none |
 | bonsai2mtp | prism-b10777-e3de715 | 131072 | f16/f16 | 2048/512 | embedded MTP, max 2 |
@@ -65,7 +65,19 @@ GPU memory beyond the projector weights; large-image capacity is workload depend
 The API accepts OpenAI-style `image_url` content, including base64 data URLs.
 `python3 llama.py smoke swift15` checks text and red/blue image recognition,
 using locally generated PNGs, and cleans up its own trial scope.
-Validated on 2026-10-19 with the pinned b11393 runtime, 128K context and MTP
+Swift moved from b11393 CUDA 12.8 to b12001 CUDA 13.4 (commit `eb4e244be`) on
+2026-10-30; context, KV, batch and MTP settings are unchanged. Both b12001 CUDA
+12.8 and 13.4 passed `smoke swift15` (text, red/blue images), and CUDA 13.4 passed
+`experiments/pi_smoke.py swift15 --port 1236` against the llama-swap backend
+(discovery, streaming, thinking off/on, read-tool round trip, images). In capped
+agentic PI runs (two per runtime, Omen Performance mode), CUDA 13.4 decoded
+76 / 64 / 45 tok/s at <32K / 32–64K / 64–96K context versus 70 / 55 / 40 on
+b11393, prefilled the same 9.8K-token first request 13% faster, and drew about
+4 W less. See `reports/swift15/AGENTIC_POWER_MODES.md`. The b11393 and b12001
+CUDA 12.8 runtimes stay installed for rollback: set `runtime` in
+`profiles/swift15.json` back and restart the server (or `swap stop`/`swap start`).
+
+Validated on 2026-10-19 with the then-pinned b11393 runtime, 128K context and MTP
 enabled: text chat, red/blue API image recognition, tool-call formatting and
 a green image attached through `opencode run --standalone` all passed.
 The small-image smoke used about 20 GiB of GPU memory; it does not establish
@@ -294,6 +306,9 @@ python3 experiments/pi_smoke.py bolt35
 # Match server overrides if applicable:
 python3 experiments/pi_smoke.py bolt35 --port 1236 --context 32768
 ```
+
+Behind llama-swap, point the smoke at the loaded backend (`--port 1236`); the
+coordinator's own `/health` returns plain `OK`, not the server's JSON.
 
 The smoke runner never starts or stops a server. It uses a temporary working
 directory and PI agent directory, registers through the actual CLI, verifies
@@ -556,6 +571,13 @@ python3 experiments/qwen_run_experiment.py
 ```
 
 Swift's `experiments/swift_benchmark.py` probes an already running server.
+`experiments/agentic_bench.py` brackets a real agentic PI run (launched separately,
+for example as a T3 Code thread) with 1 s GPU sampling and a server-log summary;
+it never starts or stops a server. `start --fixture DIR` installs the read-only PI
+policy `experiments/agentic_bench_pi_policy.json` into the trusted fixture,
+`finish RUN_DIR [--max-context N]` summarizes decode/prefill by context range,
+MTP acceptance, power, throttle reasons and temperature, and `cool` waits for the
+GPU to cool. The prompt and procedure are in `reports/swift15/AGENTIC_PROMPT.md`.
 The prefill and DFlash workloads remain distinct. They share HTTP, GPU telemetry
 and owned-scope cleanup. Fresh-process probes use unique trial scopes and always
 stop their own servers, including on failure. Production servers use fixed

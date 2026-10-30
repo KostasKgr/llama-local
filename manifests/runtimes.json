@@ -68,5 +68,33 @@
       "sha256": "095d2f3aea6cf608244a44bab06763e34a70a0942f2e31294f4ea42d92a093a8",
       "size": 158779986
     }
+  ],
+  "b12001-cuda12.8": [
+    {
+      "file": "llama-b12001-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12001/llama-b12001-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "sha256": "8f948f2af5979c6da96b47c1a03ebde64719420b22df703658f272dfd3e7ae54",
+      "size": 182765121
+    },
+    {
+      "file": "cudart-llama-b12001-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12001/cudart-llama-b12001-bin-ubuntu-cuda-12.8-x64.tar.gz",
+      "sha256": "3b52603aa90a55d1d2978d62860bf8d4f63866e762821634b0a0f6185bc8f7cf",
+      "size": 594371405
+    }
+  ],
+  "b12001-cuda13.4": [
+    {
+      "file": "llama-b12001-bin-ubuntu-cuda-13.4-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12001/llama-b12001-bin-ubuntu-cuda-13.4-x64.tar.gz",
+      "sha256": "8f2f34d4d29d0880a829b72df3ab241dac20e3ada5f0a787cd015286f928cd74",
+      "size": 164179600
+    },
+    {
+      "file": "cudart-llama-b12001-bin-ubuntu-cuda-13.4-x64.tar.gz",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12001/cudart-llama-b12001-bin-ubuntu-cuda-13.4-x64.tar.gz",
+      "sha256": "9d1410baa1a9dd0978eaec7aedd0e9b6356d2482d01963380ea6c2e60139144e",
+      "size": 440232601
+    }
   ]
 }

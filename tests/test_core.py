@@ -109,7 +109,7 @@ class CoreTests(unittest.TestCase):
 
     def test_preserved_profiles(self):
         for name, runtime, spec, batch, ubatch, kv in [
-            ('swift15', 'b11393-cuda12.8', 'draft-mtp', 2048, 512, 'q8_0'),
+            ('swift15', 'b12001-cuda13.4', 'draft-mtp', 2048, 512, 'q8_0'),
             ('qwen36', 'b11433-cuda12.8', 'draft-dflash', 4096, 2048, 'f16')]:
             p = core.load(name)
             self.assertEqual((p['runtime'], p['spec'], p['batch'], p['ubatch'], p['cache_k']),

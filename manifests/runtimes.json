@@ -96,5 +96,19 @@
       "sha256": "9d1410baa1a9dd0978eaec7aedd0e9b6356d2482d01963380ea6c2e60139144e",
       "size": 440232601
     }
+  ],
+  "win-b12001-cuda13.4": [
+    {
+      "file": "llama-b12001-bin-win-cuda-13.4-x64.zip",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12001/llama-b12001-bin-win-cuda-13.4-x64.zip",
+      "sha256": "0e65ebe9c31309b58cb6ee70802f71c22911f53bf0127d4ad395c211d0783392",
+      "size": 165141645
+    },
+    {
+      "file": "cudart-llama-bin-win-cuda-13.4-x64.zip",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12001/cudart-llama-bin-win-cuda-13.4-x64.zip",
+      "sha256": "738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668",
+      "size": 423535356
+    }
   ]
 }

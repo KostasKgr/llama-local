@@ -38,7 +38,7 @@ registration are available through the explicit commands below.
 
 | Profile | Runtime | Context | KV | Batch/microbatch | Speculation |
 | --- | --- | ---: | --- | --- | --- |
-| swift15 | b12001 CUDA 13.4 | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
+| swift15 | b12001 CUDA 13.4, Windows-native | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
 | qwen36 | b11433 | 131072 | f16/f16 | 4096/2048 | separate DFlash, max 8 |
 | bonsai2 | b11669 | 131072 | f16/f16 | 2048/512 | none |
 | bonsai2mtp | prism-b10777-e3de715 | 131072 | f16/f16 | 2048/512 | embedded MTP, max 2 |
@@ -73,9 +73,18 @@ Swift moved from b11393 CUDA 12.8 to b12001 CUDA 13.4 (commit `eb4e244be`) on
 agentic PI runs (two per runtime, Omen Performance mode), CUDA 13.4 decoded
 76 / 64 / 45 tok/s at <32K / 32–64K / 64–96K context versus 70 / 55 / 40 on
 b11393, prefilled the same 9.8K-token first request 13% faster, and drew about
-4 W less. See `reports/swift15/AGENTIC_POWER_MODES.md`. The b11393 and b12001
-CUDA 12.8 runtimes stay installed for rollback: set `runtime` in
-`profiles/swift15.json` back and restart the server (or `swap stop`/`swap start`).
+4 W less. See `reports/swift15/AGENTIC_POWER_MODES.md`. The WSL b11393, b12001
+CUDA 12.8 and b12001 CUDA 13.4 runtimes stay installed.
+
+Since 2026-10-30 Swift runs the same b12001 CUDA 13.4 build natively on Windows
+(`"platform": "windows"`, runtime `win-b12001-cuda13.4`); flags are unchanged. In
+fixed-prompt A/B runs it decoded 7–9% and prefilled 8–11% faster than WSL; in two
+capped agentic runs decode was +3% / 0% / +5% by context range and the identical
+first request prefilled 8% faster, at the same power. See "Windows-native profiles"
+and `reports/swift15/WINDOWS_NATIVE.md`. The WSL model copy was removed. To roll
+back to WSL, set `runtime` to `b12001-cuda13.4`, remove `platform`, run `python3
+llama.py install swift15` (downloads the model to `models/swift15/` again), and
+restart the server or llama-swap.
 
 Validated on 2026-10-19 with the then-pinned b11393 runtime, 128K context and MTP
 enabled: text chat, red/blue API image recognition, tool-call formatting and
@@ -307,8 +316,9 @@ python3 experiments/pi_smoke.py bolt35
 python3 experiments/pi_smoke.py bolt35 --port 1236 --context 32768
 ```
 
-Behind llama-swap, point the smoke at the loaded backend (`--port 1236`); the
-coordinator's own `/health` returns plain `OK`, not the server's JSON.
+Behind llama-swap, point the smoke at the loaded backend (`--port 1236` for WSL
+profiles, `--port 1257` for Windows profiles such as `swift15`); the coordinator's
+own `/health` returns plain `OK`, not the server's JSON.
 
 The smoke runner never starts or stops a server. It uses a temporary working
 directory and PI agent directory, registers through the actual CLI, verifies
@@ -338,8 +348,9 @@ or profile defaults changed.
 ## On-demand Bolt and Swift with llama-swap
 
 The optional coordinator exposes exactly the existing Bolt and Swift aliases at
-`http://127.0.0.1:1235/v1`. Both backends share private port 1236. Only one model
-runs at a time: switching stops the current backend before starting the next.
+`http://127.0.0.1:1235/v1`. WSL backends (Bolt) use private port 1236 and Windows
+backends (Swift) private port 1257. Only one model runs at a time: switching stops
+the current backend before starting the next.
 Other profiles remain available for manual launching and are not listed by swap.
 The coordinator does not load models at startup or unload them on an idle timer.
 
@@ -359,14 +370,15 @@ stay in ignored `downloads/` and `runtimes/`. It does not install model artifact
 install and verify `bolt35` and `swift15` separately using the existing commands.
 
 `config` prints the resolved YAML using JSON syntax (valid YAML), without writing
-anything or starting a server. `config` and `start` accept `--port` and
-`--backend-port`; they must differ. For example:
+anything or starting a server. `config` and `start` accept `--port`,
+`--backend-port` and `--windows-backend-port`; the public port must differ from
+both. For example:
 
 ```bash
-python3 llama.py swap config --port 1235 --backend-port 1236
+python3 llama.py swap config --port 1235 --backend-port 1236 --windows-backend-port 1257
 ```
 
-Each entry uses `llama.py start PROFILE --port 1236` as `cmd` and
+Each entry uses `llama.py start PROFILE --port 1236` (or `1257`) as `cmd` and
 `llama.py stop PROFILE` as `cmdStop`. Existing runtime pins, model parameters,
 Swift's projector and MTP, Bolt's DFlash, scope memory limits and server logs are
 preserved. Profile environment overrides still apply, except the backend port and
@@ -573,7 +585,9 @@ python3 experiments/qwen_run_experiment.py
 Swift's `experiments/swift_benchmark.py` probes an already running server.
 `experiments/agentic_bench.py` brackets a real agentic PI run (launched separately,
 for example as a T3 Code thread) with 1 s GPU sampling and a server-log summary;
-it never starts or stops a server. `start --fixture DIR` installs the read-only PI
+it never starts or stops a server. `start` first sends a 1-token request for the
+profile alias, so llama-swap loads the model before measurement begins (skip with
+`--no-warm`). `start --fixture DIR` installs the read-only PI
 policy `experiments/agentic_bench_pi_policy.json` into the trusted fixture,
 `finish RUN_DIR [--max-context N]` summarizes decode/prefill by context range,
 MTP acceptance, power, throttle reasons and temperature, and `cool` waits for the
@@ -584,6 +598,92 @@ stop their own servers, including on failure. Production servers use fixed
 profile scopes. Results live under `logs/<profile>/`; historical local logs are
 under `logs/<profile>/historical/`. Qwen experiment resumption uses new results
 only, preventing accidental reuse of historical measurements.
+
+### Swift benchmark runbook
+
+Two methods; record which one a result came from.
+
+- **Fixed-prompt A/B** (`experiments/swift_fixed_compare.py`): temperature 0,
+  seed 42, filler prompts of 32/8K/32K tokens, exactly 128 output tokens, prompt
+  cache off. Output, and so MTP acceptance, is identical between runtimes, so it
+  isolates runtime/OS differences in a few minutes. Absolute tok/s overstate real
+  sessions (repetitive text drafts too well).
+- **Agentic** (`experiments/agentic_bench.py`): a real PI session with normal
+  sampling and no fixed seed. Realistic, but acceptance varies 0.61–0.70 between
+  runs and single runs differ by up to ~10%, so run each setup at least twice.
+
+Keep the laptop setup fixed across compared runs (currently Omen Performance mode,
+cooling pad, lid open, built-in screen off) and note it with the results.
+
+Fixed-prompt A/B against the server on 1235, with llama-swap stopped (`python3
+llama.py swap stop`) and the profile started directly (`python3 llama.py start
+swift15`, stopped with `python3 llama.py stop swift15`):
+
+```bash
+python3 experiments/agentic_bench.py cool --below 50
+python3 experiments/swift_fixed_compare.py LABEL logs/swift15/fixed-$(date -u +%Y%m%dT%H%M%SZ) 3
+```
+
+Agentic run, through llama-swap so PI keeps its model name:
+
+1. `python3 llama.py swap start` (if not running), then
+   `python3 experiments/agentic_bench.py cool --below 50`.
+2. `python3 experiments/agentic_bench.py start --label LABEL --fixture
+   /projects/agentic-bench-t3code`. It loads the model with a 1-token request,
+   then records the server log offset and starts GPU sampling; it prints RUN_DIR.
+3. Start a new T3 Code thread with the prompt from
+   `reports/swift15/AGENTIC_PROMPT.md` as its first message: project
+   `/projects/agentic-bench-t3code`, provider/instance `pi`, model
+   `llama-local/swift-1.5-qwen3.8-27b-iq3s-mtp`, option `thinking` = `xhigh`,
+   runtime mode full access. From an agent, `t3_thread_launch` with
+   `modelSelection` `{"provider": "pi", "instanceId": "pi", "model":
+   "llama-local/swift-1.5-qwen3.8-27b-iq3s-mtp", "options": [{"id": "thinking",
+   "value": "xhigh"}]}`.
+4. Watch the newest `logs/swift15/2*/server.log` (the `server_log` in
+   `RUN_DIR/meta.json`) and interrupt the thread at the first request with
+   `task.n_tokens` above 98304:
+
+   ```bash
+   tail -n0 -F "$LOG" | awk '/task\.n_tokens = [0-9]+/ { match($0,/task\.n_tokens = [0-9]+/);
+     n=substr($0,RSTART+16,RLENGTH-16)+0; if (n>98304) { print "CAP " n; fflush() } }'
+   ```
+
+5. `python3 experiments/agentic_bench.py finish RUN_DIR --max-context 98304`, then
+   compare decode by context range, first-request prefill, acceptance, busy
+   samples, power-cap share, thermal reasons, power and temperature with earlier
+   runs in `reports/swift15/`. Fan speed and CPU temperature cannot be read
+   without Windows admin rights; record user-reported fan RPM with times.
+
+### Windows-native profiles
+
+A profile with `"platform": "windows"` runs a Windows `llama-server.exe` from WSL
+through interop, still inside the profile's systemd scope with the same flags,
+server log and smoke tests. llama-swap keeps running in WSL. Requirements: WSL2
+with `networkingMode=mirrored` (Windows `127.0.0.1` reachable from WSL) and the
+default `/mnt/c` automount.
+
+- **Artifacts** live on NTFS under `C:\AI\llama-local` (override with
+  `LLAMA_WINDOWS_ROOT=D:\path` in `.env`): `runtimes\`, `models\`, `downloads\`.
+  `python3 llama.py install swift15` downloads and verifies the model and the two
+  pinned release zips (llama.cpp and its bundled CUDA runtime DLLs) there, extracts
+  the zips and records `installation.json`; `verify swift15` re-checks the hashes.
+  Swift's model exists only there; the WSL copy under `models/swift15/` was removed.
+- **Start/stop:** `llama.py start` converts model paths to Windows paths and runs
+  the exe from its runtime directory. Stopping the scope (SIGTERM or SIGKILL)
+  terminates the Windows process through interop; `llama.py stop` and llama-swap
+  cleanup also wait until no `llama-server.exe` from this runtime directory is left,
+  so the next model never loads into still-held VRAM. Other Windows processes are
+  never matched.
+- **Ports:** under mirrored networking, a port released by one side stays
+  unbindable for the other for about a minute. Windows backends therefore get their
+  own llama-swap port (1257), and starts wait up to 150 s for the port to become
+  bindable on the side that needs it (Windows for Windows profiles, Linux for
+  llama-swap and WSL profiles). A direct `llama.py start swift15` right after
+  llama-swap released 1235 waits out that delay.
+- **Validated 2026-10-30:** install/verify, `smoke swift15`, `pi_smoke.py swift15
+  --port 1257`, Swift→Bolt→Swift switching through llama-swap (11–14 s Swift, 9 s
+  Bolt loads, VRAM released at each switch), `swap stop`, and SIGKILL of the
+  llama-swap service with Swift loaded (cleanup removed the Windows server).
 
 Reports under `reports/` are historical snapshots. Their original commands,
 paths and statements about running servers describe the original experiments;

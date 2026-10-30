@@ -5,6 +5,7 @@ import socket
 import subprocess
 import tempfile
 import tarfile
+import zipfile
 import unittest
 from unittest.mock import patch
 from lib import core
@@ -89,7 +90,7 @@ class CoreTests(unittest.TestCase):
 
     def test_start_captures_both_streams_and_preserves_failure(self):
         with tempfile.TemporaryDirectory() as temp:
-            p = core.load('swift15')
+            p = core.load('bolt35')
             command = ['bash', '-c', 'echo output; echo error >&2; exit 7']
             def execute(file, args, env):
                 # Exercise the actual logging pipeline without starting a GPU server.
@@ -98,18 +99,18 @@ class CoreTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 7)
                 self.assertEqual(result.stdout, 'output\nerror\n')
             with patch.object(core, 'ROOT', Path(temp)), patch.object(core, 'preflight'), \
-                    patch.object(core, 'command', return_value=command), \
+                    patch.object(core, 'command', return_value=command), patch.object(core, 'wait_port'), \
                     patch('lib.core.os.execvpe', side_effect=execute):
                 core.start(p)
                 core.start(p)
-            logs = list((Path(temp) / 'logs' / 'swift15').glob('*/server.log'))
+            logs = list((Path(temp) / 'logs' / 'bolt35').glob('*/server.log'))
             self.assertEqual(len(logs), 2)
             for log in logs:
                 self.assertEqual(log.read_text(), 'output\nerror\n')
 
     def test_preserved_profiles(self):
         for name, runtime, spec, batch, ubatch, kv in [
-            ('swift15', 'b12001-cuda13.4', 'draft-mtp', 2048, 512, 'q8_0'),
+            ('swift15', 'win-b12001-cuda13.4', 'draft-mtp', 2048, 512, 'q8_0'),
             ('qwen36', 'b11433-cuda12.8', 'draft-dflash', 4096, 2048, 'f16')]:
             p = core.load(name)
             self.assertEqual((p['runtime'], p['spec'], p['batch'], p['ubatch'], p['cache_k']),
@@ -129,8 +130,8 @@ class CoreTests(unittest.TestCase):
     def test_projector_arguments_and_missing_artifact(self):
         p = core.load('swift15')
         args = core.command(p)
-        projector = core.ROOT / 'models' / p['mmproj']
-        self.assertEqual(args[args.index('--mmproj') + 1], str(projector))
+        projector = core.artifact_root(p) / 'models' / p['mmproj']
+        self.assertEqual(args[args.index('--mmproj') + 1], core.model_arg(p, p['mmproj']))
         for name in ('qwen36', 'bonsai2', 'bonsai2mtp'):
             self.assertNotIn('--mmproj', core.command(core.load(name)))
         with patch('lib.swap.guard'), patch('lib.core.os.access', return_value=True), \
@@ -141,6 +142,92 @@ class CoreTests(unittest.TestCase):
                 core.preflight(p)
             sock.assert_not_called()
             active.assert_not_called()
+
+    def test_windows_profile_paths(self):
+        p = core.load('swift15')
+        self.assertEqual(p['platform'], 'windows')
+        with patch.object(core, 'load_env_file', return_value={'LLAMA_WINDOWS_ROOT': 'D:\\Inference\\'}):
+            args = core.command(p)
+            self.assertEqual(args[0], '/mnt/d/Inference/runtimes/win-b12001-cuda13.4/llama-server.exe')
+            self.assertEqual(args[args.index('-m') + 1],
+                             'D:\\Inference\\models\\swift15\\Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf')
+            self.assertEqual(core.artifact_root(p), Path('/mnt/d/Inference'))
+        for value in ('relative\\path', '/mnt/c/AI', 'C:'):
+            with patch.object(core, 'load_env_file', return_value={'LLAMA_WINDOWS_ROOT': value}):
+                with self.assertRaisesRegex(ValueError, 'LLAMA_WINDOWS_ROOT'):
+                    core.windows_root()
+        bolt = core.load('bolt35')
+        self.assertEqual(bolt['platform'], 'linux')
+        self.assertEqual(core.command(bolt)[0], str(core.ROOT / 'runtimes' / bolt['runtime'] / 'llama-server'))
+        with patch('lib.core.json.loads', return_value={**core.json.loads(
+                (core.ROOT / 'profiles' / 'bolt35.json').read_text()), 'platform': 'macos'}):
+            with self.assertRaisesRegex(ValueError, 'platform'):
+                core.load('bolt35')
+
+    def check_windows_install(self, members):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = root / 'runtime.zip'
+            with zipfile.ZipFile(archive, 'w') as z:
+                for name, data in members.items():
+                    z.writestr(name, data)
+            p = {'runtime': 'win-test', 'platform': 'windows', 'scope': 'swift15'}
+            with patch.object(core, 'artifact_root', return_value=root), patch.object(core, 'load', return_value=p), \
+                    patch.object(core, 'manifest', side_effect=[{'swift15': []}, {'win-test': [{}]}]), \
+                    patch.object(core, 'fetch', return_value=archive), \
+                    patch('lib.core.subprocess.check_output', return_value='test') as run:
+                core.install('swift15')
+            run.assert_called_with([str(root / 'runtimes/win-test/llama-server.exe'), '--list-devices'],
+                                   cwd=root / 'runtimes/win-test', stderr=subprocess.STDOUT, text=True)
+            return json.loads((root / 'runtimes/win-test/installation.json').read_text())
+
+    def test_windows_install_flat_zip(self):
+        info = self.check_windows_install({'llama-server.exe': b'server', 'cudart64_13.dll': b'cuda'})
+        self.assertEqual((info['platform'], info['cuda_runtime_major']), ('windows', 13))
+        with self.assertRaisesRegex(ValueError, 'CUDA'):
+            self.check_windows_install({'llama-server.exe': b'server'})
+        for bad in ('../escape.dll', '/abs.dll', 'C:/drive.dll'):
+            with self.assertRaisesRegex(ValueError, 'archive structure'):
+                self.check_windows_install({'llama-server.exe': b'server', bad: b'x'})
+
+    def test_windows_start_waits_for_port_and_runs_from_runtime(self):
+        p = core.load('swift15')
+        with patch.object(core, 'preflight'), patch.object(core, 'windows_port_free', side_effect=[False, True]), \
+                patch('lib.core.time.sleep') as sleep, patch('lib.core.os.chdir') as chdir, \
+                patch('lib.core.os.execvpe') as execute, tempfile.TemporaryDirectory() as temp, \
+                patch.object(core, 'ROOT', Path(temp)):
+            core.start(p)
+        sleep.assert_called_once()
+        chdir.assert_called_once_with(core.server_path(p).parent)
+        self.assertNotIn(p['runtime'], execute.call_args.args[2].get('LD_LIBRARY_PATH', ''))
+        with patch.object(core, 'windows_port_free', return_value=False), patch('lib.core.time.sleep'), \
+                patch('lib.core.time.monotonic', side_effect=[0, 0, 1000]):
+            with self.assertRaisesRegex(ValueError, 'cannot bind'):
+                core.wait_port(1257, core.windows_port_free)
+
+    def test_windows_stop_waits_for_server_exit(self):
+        p = core.load('swift15')
+        with patch('lib.swap.guard'), patch('lib.core.subprocess.run') as run, \
+                patch.object(core, 'windows_server_running', side_effect=[True, False]) as running, \
+                patch('lib.core.time.sleep'):
+            core.stop(p)
+        run.assert_called_once()
+        self.assertEqual(running.call_count, 2)
+        with patch('lib.swap.guard'), patch('lib.core.subprocess.run'), \
+                patch.object(core, 'windows_server_running') as running:
+            core.stop(core.load('bolt35'))
+        running.assert_not_called()
+
+    def test_linux_port_wait(self):
+        with socket.socket() as sock:
+            sock.bind(('127.0.0.1', 0))
+            sock.listen()
+            port = sock.getsockname()[1]
+            self.assertFalse(core.linux_port_free(port))
+            with patch('lib.core.time.sleep'), patch('lib.core.time.monotonic', side_effect=[0, 1000]):
+                with self.assertRaisesRegex(ValueError, 'Linux cannot bind'):
+                    core.wait_port(port)
+        self.assertTrue(core.linux_port_free(port))
 
     def test_invalid_overrides(self):
         for override in [{'ubatch': 8192}, {'port': 0}, {'context': -1}, {'spec': 'draft-dflash'}]:

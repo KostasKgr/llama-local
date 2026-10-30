@@ -1,5 +1,6 @@
 {
-  "runtime": "b12001-cuda13.4",
+  "runtime": "win-b12001-cuda13.4",
+  "platform": "windows",
   "model": "swift15/Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf",
   "mmproj": "swift15/mmproj-Swift-1.5-Qwen3.8-27B-F16.gguf",
   "context": 131072,

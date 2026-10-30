@@ -5,11 +5,17 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import tarfile
+import time
+import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
+# Windows-platform profiles keep runtimes, models and downloads on NTFS so the
+# Windows server never loads multi-GB files through the WSL file share.
+WINDOWS_ROOT = r'C:\AI\llama-local'
 PROFILES = {'swift15': ('SWIFT', 'draft-mtp'),
             'qwen36': ('QWEN', 'draft-dflash'),
             'bonsai2': ('BONSAI', 'none'),
@@ -39,6 +45,8 @@ def load(name, overrides=None):
         raise ValueError('Invalid microbatch or port')
     if p['spec'] not in ('none', supported_spec):
         raise ValueError('Unsupported speculation for this profile')
+    if p.setdefault('platform', 'linux') not in ('linux', 'windows'):
+        raise ValueError('Unsupported platform')
     if p['load_mode'] not in ('auto', 'dio', 'mmap', 'mlock'):
         raise ValueError('Unsupported load mode')
     if any(p[k] not in ('f16', 'f32', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'q5_0', 'q5_1', 'iq4_nl') for k in ('cache_k', 'cache_v')):
@@ -60,6 +68,35 @@ def load_env_file(path=None):
     return values
 
 
+def windows_root():
+    value = load_env_file().get('LLAMA_WINDOWS_ROOT', '').strip() or WINDOWS_ROOT
+    if len(value) < 3 or not value[0].isalpha() or value[1:3] != ':\\':
+        raise ValueError('LLAMA_WINDOWS_ROOT must be an absolute Windows path such as C:\\AI\\llama-local')
+    return value.rstrip('\\')
+
+
+def wsl_path(path):
+    """C:\\a\\b -> /mnt/c/a/b, the default WSL automount location."""
+    return Path('/mnt', path[0].lower(), *[part for part in path[3:].split('\\') if part])
+
+
+def artifact_root(p):
+    """Where a profile's models, downloads and runtimes live, as a WSL path."""
+    return wsl_path(windows_root()) if p.get('platform') == 'windows' else ROOT
+
+
+def server_path(p):
+    name = 'llama-server.exe' if p.get('platform') == 'windows' else 'llama-server'
+    return artifact_root(p) / 'runtimes' / p['runtime'] / name
+
+
+def model_arg(p, relative):
+    """Model path as the server process sees it."""
+    if p.get('platform') == 'windows':
+        return windows_root() + '\\models\\' + relative.replace('/', '\\')
+    return str(ROOT / 'models' / relative)
+
+
 def resolve_base_url(profile, env_key, env_values=None):
     value = (env_values if env_values is not None else load_env_file()).get(env_key, '').strip()
     if not value:
@@ -71,10 +108,10 @@ def resolve_base_url(profile, env_key, env_values=None):
 
 
 def command(p):
-    server = ROOT / 'runtimes' / p['runtime'] / 'llama-server'
+    server = server_path(p)
     # OpenCode thread naming can displace the main prompt and cause cache thrashing;
     # reserve 2 GiB of RAM cache for both profiles to retain displaced prompt states.
-    args = [str(server), '-m', str(ROOT / 'models' / p['model']), '--load-mode', p['load_mode'],
+    args = [str(server), '-m', model_arg(p, p['model']), '--load-mode', p['load_mode'],
             '-ngl', '999', '-fa', 'on', '-c', str(p['context']), '-np', '1',
             '-b', str(p['batch']), '-ub', str(p['ubatch']), '--ctx-checkpoints', '2', '--cache-ram', '2048',
             '--cache-type-k', p['cache_k'], '--cache-type-v', p['cache_v'], '--spec-type', p['spec'],
@@ -83,7 +120,7 @@ def command(p):
     if p['fit_off']:
         args += ['--fit', 'off']
     if p.get('mmproj'):
-        args += ['--mmproj', str(ROOT / 'models' / p['mmproj'])]
+        args += ['--mmproj', model_arg(p, p['mmproj'])]
     if 'sampling' in p:
         sampling = p['sampling']
         args += ['--temp', str(sampling['temperature']), '--top-k', str(sampling['top_k']),
@@ -98,7 +135,7 @@ def command(p):
             if key in p:
                 args += [flag, str(p[key])]
         if p['spec'] == 'draft-dflash':
-            args += ['-md', str(ROOT / 'models' / p['draft']), '-ngld', '999']
+            args += ['-md', model_arg(p, p['draft']), '-ngld', '999']
     return args
 
 
@@ -123,7 +160,7 @@ def preflight(p):
         profile = p['scope'].split('-trial-', 1)[0]
         files += [a['file'] for a in manifest('models')[profile]
                   if '-of-' in a['file'] and Path(a['file']).parent == Path(p['model']).parent]
-    if any(not (ROOT / 'models' / f).is_file() for f in files):
+    if any(not (artifact_root(p) / 'models' / f).is_file() for f in files):
         raise ValueError('Model artifact missing; run install first')
     with socket.socket() as sock:
         sock.settimeout(2)
@@ -133,10 +170,53 @@ def preflight(p):
         raise ValueError('Profile scope already active')
 
 
+def powershell(script):
+    # User systemd services (llama-swap) do not inherit the Windows PATH entries.
+    exe = shutil.which('powershell.exe') or '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
+    return subprocess.run([exe, '-NoProfile', '-NonInteractive', '-Command', script],
+                          capture_output=True, text=True, timeout=30).stdout.strip()
+
+
+def windows_port_free(port):
+    """Whether Windows itself can bind the port; WSL mirrored networking keeps a port
+    released by a Linux listener unbindable on Windows for about a minute."""
+    script = (f"$l=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,{int(port)});"
+              "try{$l.Start();$l.Stop();'free'}catch{'busy'}")
+    return powershell(script) == 'free'
+
+
+def linux_port_free(port):
+    """Whether a Linux listener can bind the port (the reverse mirrored-networking delay
+    applies after a Windows listener releases it)."""
+    with socket.socket() as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(('127.0.0.1', port))
+        except OSError:
+            return False
+    return True
+
+
+def wait_port(port, free=None, timeout=150):
+    free = free or linux_port_free
+    deadline = time.monotonic() + timeout
+    while not free(port):
+        if time.monotonic() > deadline:
+            side = 'Windows' if free is windows_port_free else 'Linux'
+            raise ValueError(f'{side} cannot bind port {port}; stop its owner first')
+        time.sleep(3)
+
+
 def start(p):
     preflight(p)
     env = dict(os.environ)
-    env['LD_LIBRARY_PATH'] = str(ROOT / 'runtimes' / p['runtime']) + (':' + env['LD_LIBRARY_PATH'] if env.get('LD_LIBRARY_PATH') else '')
+    if p.get('platform') == 'windows':
+        wait_port(p['port'], windows_port_free)
+        # Run the server from its NTFS directory rather than a WSL (UNC) working directory.
+        os.chdir(server_path(p).parent)
+    else:
+        wait_port(p['port'])
+        env['LD_LIBRARY_PATH'] = str(ROOT / 'runtimes' / p['runtime']) + (':' + env['LD_LIBRARY_PATH'] if env.get('LD_LIBRARY_PATH') else '')
     profile = p['scope'].split('-trial-', 1)[0]
     log_dir = ROOT / 'logs' / profile / datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
     log_dir.mkdir(parents=True, exist_ok=False)
@@ -149,10 +229,32 @@ def start(p):
     os.execvpe(args[0], args, env)
 
 
+def windows_server_running(p):
+    """Whether a server from this profile's runtime directory is still running; other
+    llama-server.exe processes (for example other installs) are never matched."""
+    runtime = windows_root() + '\\runtimes\\' + p['runtime'] + '\\'
+    script = ("@(Get-Process llama-server -ErrorAction SilentlyContinue | Where-Object { $_.Path -and "
+              f"$_.Path.StartsWith('{runtime}', [StringComparison]::OrdinalIgnoreCase) }}).Count")
+    return powershell(script) not in ('', '0')
+
+
 def stop(p):
     from . import swap
     swap.guard(p)
     subprocess.run(['systemctl', '--user', 'stop', p['scope'] + '.scope'], check=True, timeout=30)
+    wait_windows_exit(p)
+
+
+def wait_windows_exit(p, timeout=30):
+    """A scope stop signals the WSL side, which terminates the Windows process
+    asynchronously; wait so the next model does not load into still-held VRAM."""
+    if p.get('platform') != 'windows':
+        return
+    deadline = time.monotonic() + timeout
+    while windows_server_running(p):
+        if time.monotonic() > deadline:
+            raise ValueError('Windows llama-server still running after stop')
+        time.sleep(0.5)
 
 
 def manifest(kind):
@@ -183,11 +285,15 @@ def fetch(base, artifact):
 
 def install(name):
     p = load(name)
+    root = artifact_root(p)
     for a in manifest('models')[name]:
-        fetch(ROOT / 'models', a)
-    archives = [fetch(ROOT / 'downloads', a) for a in manifest('runtimes')[p['runtime']]]
-    runtime = ROOT / 'runtimes' / p['runtime']
+        fetch(root / 'models', a)
+    archives = [fetch(root / 'downloads', a) for a in manifest('runtimes')[p['runtime']]]
+    runtime = root / 'runtimes' / p['runtime']
     runtime.mkdir(parents=True, exist_ok=True)
+    if p.get('platform') == 'windows':
+        install_windows(p, archives, runtime)
+        return
     for path in archives:
         with tarfile.open(path) as archive:
             # Prism archives include a harmless root-directory entry before the single top-level folder.
@@ -214,9 +320,29 @@ def install(name):
     (runtime / 'installation.json').write_text(json.dumps(info, indent=2) + '\n')
 
 
+def install_windows(p, archives, runtime):
+    """Release zips are flat: llama-server.exe, ggml DLLs and the bundled cudart DLLs."""
+    for path in archives:
+        with zipfile.ZipFile(path) as archive:
+            names = archive.namelist()
+            if any(n.startswith(('/', '\\')) or ':' in n or '..' in Path(n.replace('\\', '/')).parts for n in names):
+                raise ValueError('Unexpected archive structure')
+            archive.extractall(runtime)
+    server = server_path(p)
+    info = {'profile': p['scope'].split('-trial-', 1)[0], 'runtime': p['runtime'], 'platform': 'windows',
+            'server_sha256': hashlib.sha256(server.read_bytes()).hexdigest()}
+    for key, flag in [('version', '--version'), ('devices', '--list-devices')]:
+        info[key] = subprocess.check_output([str(server), flag], cwd=runtime, stderr=subprocess.STDOUT, text=True)
+    cuda = [major for major in (12, 13) if (runtime / f'cudart64_{major}.dll').is_file()]
+    if len(cuda) != 1:
+        raise ValueError('Expected exactly one bundled CUDA 12 or 13 runtime library')
+    info['cuda_runtime_major'] = cuda[0]
+    (runtime / 'installation.json').write_text(json.dumps(info, indent=2) + '\n')
+
+
 def snapshot(name):
     p = load(name)
-    server = ROOT / 'runtimes' / p['runtime'] / 'llama-server'
+    server = server_path(p)
     return {'profile': p, 'command': command(p), 'model_artifacts': manifest('models')[name],
             'runtime_artifacts': manifest('runtimes')[p['runtime']],
             'server_sha256': hashlib.sha256(server.read_bytes()).hexdigest()}

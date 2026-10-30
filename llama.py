@@ -18,6 +18,7 @@ def main():
         if action in ('config', 'start', '_serve'):
             command.add_argument('--port', type=int, default=1235)
             command.add_argument('--backend-port', type=int, default=1236)
+            command.add_argument('--windows-backend-port', type=int, default=1257)
         if action in ('_serve', '_cleanup'):
             command.add_argument('--token', required=True)
         if action == '_serve':
@@ -50,11 +51,12 @@ def main():
     args = parser.parse_args()
     if args.action == 'swap':
         if args.swap_action == 'config':
-            print(swap.config(args.port, args.backend_port), end='')
+            print(swap.config(args.port, args.backend_port, args.windows_backend_port), end='')
         elif args.swap_action == 'start':
-            swap.start(args.port, args.backend_port)
+            swap.start(args.port, args.backend_port, args.windows_backend_port)
         elif args.swap_action == '_serve':
-            swap.serve(args.token, args.run_dir, args.port, args.backend_port)
+            swap.serve(args.token, args.run_dir, args.port, args.backend_port,
+                       args.windows_backend_port)
         elif args.swap_action == '_cleanup':
             swap.cleanup(args.token)
         else:
@@ -78,10 +80,11 @@ def main():
         return
     if args.action == 'verify':
         p = core.load(args.profile)
+        root = core.artifact_root(p)
         for a in core.manifest('models')[args.profile]:
-            core.verify(core.ROOT / 'models' / a['file'], a)
+            core.verify(root / 'models' / a['file'], a)
         for a in core.manifest('runtimes')[p['runtime']]:
-            core.verify(core.ROOT / 'downloads' / a['file'], a)
+            core.verify(root / 'downloads' / a['file'], a)
         print('All pinned artifacts verified')
         return
     if args.action == 'smoke':

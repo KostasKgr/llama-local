@@ -27,6 +27,25 @@ class SwapTests(unittest.TestCase):
         self.assertEqual(config['globalTTL'], 0)
         self.assertNotIn('hooks', config)
 
+    def test_windows_profiles_get_their_own_backend_port(self):
+        config = json.loads(swap.config(1235, 1236, 1257))
+        for name in swap.PROFILES:
+            p = core.load(name)
+            port = '1257' if p['platform'] == 'windows' else '1236'
+            entry = config['models'][p['alias']]
+            self.assertEqual(shlex.split(entry['cmd'])[-2:], ['--port', port])
+            self.assertEqual(entry['proxy'], 'http://127.0.0.1:' + port)
+        self.assertEqual(core.load('swift15')['platform'], 'windows')
+        with self.assertRaises(ValueError):
+            swap.config(1235, 1236, 1235)
+        with patch('lib.swap.socket.socket') as sock, patch.object(core, 'preflight') as preflight:
+            sock.return_value.__enter__.return_value.connect_ex.return_value = 1
+            swap.preflight(1235, 1236, 1257)
+            checked = [c.args[0] for c in sock.return_value.__enter__.return_value.connect_ex.call_args_list]
+            self.assertEqual(checked, [('127.0.0.1', 1235), ('127.0.0.1', 1236), ('127.0.0.1', 1257)])
+            self.assertEqual({c.args[0]['scope']: c.args[0]['port'] for c in preflight.call_args_list},
+                             {'bolt35': 1236, 'swift15': 1257})
+
     def test_config_is_read_only_and_quotes_paths(self):
         with tempfile.TemporaryDirectory(prefix='swap path ') as temp:
             with patch.object(core, 'ROOT', Path(temp)), patch.object(core, 'load', side_effect=[
@@ -89,6 +108,20 @@ class SwapTests(unittest.TestCase):
                 ['systemctl', '--user', 'stop', 'swift15.scope']])
             self.assertFalse(swap.state_path().exists())
 
+    def test_cleanup_waits_for_windows_servers_to_exit(self):
+        profiles = {'bolt35': {'scope': 'bolt35', 'platform': 'linux'},
+                    'swift15': {'scope': 'swift15', 'platform': 'windows'}}
+        with tempfile.TemporaryDirectory() as temp, patch.object(core, 'ROOT', Path(temp)), \
+                patch.object(swap, 'unit_state', return_value='active'), \
+                patch.object(core, 'load', side_effect=profiles.get), \
+                patch.object(core, 'windows_server_running', side_effect=[True, False]) as running, \
+                patch('lib.core.time.sleep'), patch('lib.swap.subprocess.run'):
+            swap.directory().mkdir(parents=True)
+            swap.state_path().write_text(json.dumps({'token': 'mine'}))
+            swap.cleanup('mine')
+            self.assertEqual([c.args[0]['scope'] for c in running.call_args_list], ['swift15', 'swift15'])
+            self.assertFalse(swap.state_path().exists())
+
     def test_failed_cleanup_retains_ownership_for_retry(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(core, 'ROOT', Path(temp)), \
                 patch.object(swap, 'unit_state', return_value='active'), \
@@ -133,7 +166,7 @@ class SwapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, patch.object(core, 'ROOT', Path(temp)), \
                 patch.object(swap, 'preflight'), \
                 patch.object(swap, 'binary', return_value=Path('/bin/false')), \
-                patch.object(swap, 'unit_state', return_value='inactive'), \
+                patch.object(swap, 'unit_state', return_value='inactive'), patch.object(core, 'wait_port'), \
                 patch.object(core, 'load', return_value={}), patch.dict(os.environ):
             with self.assertRaises(subprocess.CalledProcessError):
                 swap.serve('mine', temp, 1235, 1236)

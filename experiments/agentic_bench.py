@@ -17,7 +17,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from lib import core
+from lib import core, probes
 
 PI_POLICY = Path(__file__).with_name('agentic_bench_pi_policy.json')
 PI_AGENT = Path.home() / '.pi' / 'agent'
@@ -70,8 +70,21 @@ def install_pi_policy(fixture):
     return str(target)
 
 
+def warm(profile):
+    """Load the model (through llama-swap, if it fronts the port) before the run is measured.
+
+    The offset is taken afterwards, so neither the load nor this request enters the summary.
+    """
+    p = core.load(profile)
+    t = time.monotonic()
+    probes.request(f'http://127.0.0.1:{p["port"]}', '/v1/chat/completions',
+                   {'model': p['alias'], 'max_tokens': 1, 'messages': [{'role': 'user', 'content': 'Hi'}]}, 900)
+    return round(time.monotonic() - t, 1)
+
+
 def start(args):
     policy = install_pi_policy(args.fixture) if args.fixture else None
+    warm_s = None if args.no_warm else warm(args.profile)
     log = newest_log(args.profile)
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     out = core.ROOT / 'logs' / args.profile / f'agentic-{stamp}-{args.label}'
@@ -80,7 +93,7 @@ def start(args):
         sampler = subprocess.Popen(['nvidia-smi', '--query-gpu=' + GPU_FIELDS, '--format=csv,nounits',
                                     '-lms', str(args.interval_ms)], stdout=f, stderr=subprocess.STDOUT,
                                    start_new_session=True)
-    meta = {'label': args.label, 'profile': args.profile, 'started': stamp, 'start_temp_c': gpu_temp(),
+    meta = {'label': args.label, 'profile': args.profile, 'started': stamp, 'start_temp_c': gpu_temp(), 'warm_s': warm_s,
             'server_log': str(log) if log else None, 'log_offset': log.stat().st_size if log else 0,
             'sampler_pid': sampler.pid, 'fixture': args.fixture, 'pi_policy': policy,
             'fixture_before': git_state(args.fixture) if args.fixture else None}
@@ -213,6 +226,7 @@ s.add_argument('--label', required=True)
 s.add_argument('--profile', default='swift15', choices=sorted(core.PROFILES))
 s.add_argument('--fixture', help='git checkout that must remain unchanged')
 s.add_argument('--interval-ms', type=int, default=1000)
+s.add_argument('--no-warm', action='store_true', help='do not load the model with a 1-token request first')
 s.set_defaults(func=start)
 f = sub.add_parser('finish')
 f.add_argument('run_dir')

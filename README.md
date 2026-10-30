@@ -45,8 +45,13 @@ registration are available through the explicit commands below.
 | bolt35 | b11808 CUDA 13.4 | 65536 | f16/f16 | 2048/512 | separate DFlash, max 7 |
 
 All profiles use full layer offload, Flash Attention, one slot, Direct I/O loading,
-two checkpoints and 2 GiB RAM prompt cache. OpenCode thread naming can displace
+two checkpoints and 2 GiB RAM prompt cache, except Swift's 4 GiB
+(`"cache_ram": 4096` MiB in `profiles/swift15.json`). OpenCode thread naming can displace
 the main prompt and cause cache thrashing when the RAM cache is too small.
+Swift's cache limit was raised after a 2302 MiB prompt state exceeded the old
+2048 MiB limit; this takes effect on the next server launch. A larger cache
+cannot reuse a changed prefix without compatible state/checkpoints and does not
+guarantee retention of every long prompt.
 Scopes throttle host memory above MemoryHigh=8G and use a hard MemoryMax=9G
 limit with MemorySwapMax=0. If memory cannot be reclaimed at the
 9 GiB limit, the scope's OOM killer terminates the offending process. These

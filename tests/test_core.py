@@ -120,6 +120,16 @@ class CoreTests(unittest.TestCase):
             self.assertEqual('-md' in args, name == 'qwen36')
             self.assertEqual('--fit' in args, name == 'qwen36')
 
+    def test_prompt_ram_cache_limits(self):
+        for name in core.PROFILES:
+            with self.subTest(profile=name):
+                args = core.command(core.load(name))
+                self.assertEqual(args[args.index('--cache-ram') + 1],
+                                 '4096' if name == 'swift15' else '2048')
+        with patch.dict('os.environ', {'LLAMA_SCOPE': 'swift15-trial-cache'}):
+            args = core.command(core.load('swift15'))
+            self.assertEqual(args[args.index('--cache-ram') + 1], '4096')
+
     def test_owned_scope_validation(self):
         with patch.dict('os.environ', {'LLAMA_SCOPE': 'unrelated'}):
             with self.assertRaises(ValueError):

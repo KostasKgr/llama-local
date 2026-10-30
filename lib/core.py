@@ -109,11 +109,11 @@ def resolve_base_url(profile, env_key, env_values=None):
 
 def command(p):
     server = server_path(p)
-    # OpenCode thread naming can displace the main prompt and cause cache thrashing;
-    # reserve 2 GiB of RAM cache for both profiles to retain displaced prompt states.
+    # Retain displaced prompt states; profiles can raise the default MiB limit.
     args = [str(server), '-m', model_arg(p, p['model']), '--load-mode', p['load_mode'],
             '-ngl', '999', '-fa', 'on', '-c', str(p['context']), '-np', '1',
-            '-b', str(p['batch']), '-ub', str(p['ubatch']), '--ctx-checkpoints', '2', '--cache-ram', '2048',
+            '-b', str(p['batch']), '-ub', str(p['ubatch']), '--ctx-checkpoints', '2',
+            '--cache-ram', str(p.get('cache_ram', 2048)),
             '--cache-type-k', p['cache_k'], '--cache-type-v', p['cache_v'], '--spec-type', p['spec'],
             '--host', '127.0.0.1', '--port', str(p['port']), '--jinja', '--alias', p['alias'],
             '--metrics', '--perf', '--log-verbosity', '4']

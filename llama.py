@@ -29,7 +29,10 @@ def main():
         if action == 'start':
             cmd.add_argument('--dry-run', action='store_true')
             for key, cast in core.FIELDS.items():
-                cmd.add_argument('--' + key.replace('_', '-'), type=cast)
+                if key == 'kv_unified':
+                    cmd.add_argument('--kv-unified', action=argparse.BooleanOptionalAction, default=None)
+                else:
+                    cmd.add_argument('--' + key.replace('_', '-'), type=cast)
     oc = sub.add_parser('opencode', help='Manage OpenCode model registration')
     oc_sub = oc.add_subparsers(dest='opencode_action', required=True)
     add = oc_sub.add_parser('add')

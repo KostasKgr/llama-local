@@ -21,7 +21,17 @@ PROFILES = {'swift15': ('SWIFT', 'draft-mtp'),
             'bonsai2': ('BONSAI', 'none'),
             'bonsai2mtp': ('BONSAI_MTP', 'draft-mtp'),
             'bolt35': ('BOLT35', 'draft-dflash')}
-FIELDS = {'context': int, 'batch': int, 'ubatch': int, 'draft_max': int, 'port': int,
+def boolean(value):
+    if isinstance(value, bool):
+        return value
+    if str(value).lower() in ('1', 'true', 'yes', 'on'):
+        return True
+    if str(value).lower() in ('0', 'false', 'no', 'off'):
+        return False
+    raise ValueError('Boolean setting must be true/false or 1/0')
+
+
+FIELDS = {'kv_unified': boolean, 'parallel': int, 'context': int, 'batch': int, 'ubatch': int, 'draft_max': int, 'port': int,
           'cache_k': str, 'cache_v': str, 'load_mode': str, 'spec': str}
 
 
@@ -39,6 +49,13 @@ def load(name, overrides=None):
         if f'{prefix}_{env_key}' in os.environ:
             p[key] = cast(os.environ[f'{prefix}_{env_key}'])
     p.update({k: v for k, v in (overrides or {}).items() if v is not None})
+    p.setdefault('parallel', 1)
+    p.setdefault('kv_unified', False)
+    if type(p['kv_unified']) is not bool:
+        raise ValueError('kv_unified must be a boolean')
+    if (type(p['parallel']) is not int or p['parallel'] <= 0
+            or (not p['kv_unified'] and p['context'] % p['parallel'])):
+        raise ValueError('Parallel slots must be positive and divide total context')
     if any(p[k] <= 0 for k in ('context', 'batch', 'ubatch', 'draft_max')):
         raise ValueError('Context, batch, microbatch and draft maximum must be positive')
     if p['ubatch'] > p['batch'] or not 1 <= p['port'] <= 65535:
@@ -111,12 +128,14 @@ def command(p):
     server = server_path(p)
     # Retain displaced prompt states; profiles can raise the default MiB limit.
     args = [str(server), '-m', model_arg(p, p['model']), '--load-mode', p['load_mode'],
-            '-ngl', '999', '-fa', 'on', '-c', str(p['context']), '-np', '1',
+            '-ngl', '999', '-fa', 'on', '-c', str(p['context']), '-np', str(p.get('parallel', 1)),
             '-b', str(p['batch']), '-ub', str(p['ubatch']), '--ctx-checkpoints', '2',
             '--cache-ram', str(p.get('cache_ram', 2048)),
             '--cache-type-k', p['cache_k'], '--cache-type-v', p['cache_v'], '--spec-type', p['spec'],
             '--host', '127.0.0.1', '--port', str(p['port']), '--jinja', '--alias', p['alias'],
             '--metrics', '--perf', '--log-verbosity', '4']
+    if p.get('kv_unified', False):
+        args += ['--kv-unified']
     if p['fit_off']:
         args += ['--fit', 'off']
     if p.get('mmproj'):

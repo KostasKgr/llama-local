@@ -48,5 +48,7 @@
         "reasoningEffort": "xhigh"
       }
     }
-  }
+  },
+  "parallel": 2,
+  "kv_unified": true
 }

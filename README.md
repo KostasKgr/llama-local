@@ -33,6 +33,9 @@ Only one profile can use the default port at a time. Start refuses an occupied
 port or active profile scope. Servers bind `127.0.0.1:1235`; API base is
 `http://127.0.0.1:1235/v1`. Existing model aliases are preserved:
 `swift-1.5-qwen3.8-27b-iq3s-mtp` and `qwen3.6-35b-a3b-iq3s-dflash`.
+Swift uses two slots sharing a single 131072-token unified KV pool. Each slot
+can use up to that limit, but simultaneous conversations share the total capacity;
+128K is not reserved independently for each. Other profiles use one slot.
 Select the alias for the running profile in your client. OpenCode and PI
 registration are available through the explicit commands below.
 
@@ -44,7 +47,7 @@ registration are available through the explicit commands below.
 | bonsai2mtp | prism-b10777-e3de715 | 131072 | f16/f16 | 2048/512 | embedded MTP, max 2 |
 | bolt35 | b11808 CUDA 13.4 | 65536 | f16/f16 | 2048/512 | separate DFlash, max 7 |
 
-All profiles use full layer offload, Flash Attention, one slot, Direct I/O loading,
+All profiles use full layer offload, Flash Attention, Direct I/O loading,
 two checkpoints and 2 GiB RAM prompt cache, except Swift's 4 GiB
 (`"cache_ram": 4096` MiB in `profiles/swift15.json`). OpenCode thread naming can displace
 the main prompt and cause cache thrashing when the RAM cache is too small.
@@ -658,6 +661,71 @@ Agentic run, through llama-swap so PI keeps its model name:
    samples, power-cap share, thermal reasons, power and temperature with earlier
    runs in `reports/swift15/`. Fan speed and CPU temperature cannot be read
    without Windows admin rights; record user-reported fan RPM with times.
+
+### Concurrent agent slot test
+
+`experiments/agentic_slots.py` launches `--threads N` isolated PI CLI sessions
+at a barrier against an existing idle backend. Each agent reads three generated
+Python modules, traces a call chain and reports validation risks. The check
+requires successful reads, correct per-agent evidence markers and a successful
+final answer; it does not grade the prose review. Only the read tool is enabled.
+This is a short concurrency/tool-use test, not a long-context quality benchmark.
+PI configuration, fixtures, events, per-agent elapsed time/token usage, GPU
+samples and the summary remain under ignored `logs/<profile>/agentic-slots-*`.
+Sampled peaks can miss brief memory/concurrency spikes. Whole-GPU memory includes
+other applications. Concurrent agents share GPU throughput.
+
+The launcher accepts `--parallel N`; `--context` is **total** context, divided among slots when unified KV is off. Swift defaults to two slots and unified KV with the existing 128K total pool;
+other profiles default to one slot. With `--kv-unified`, context is shared
+instead of divided. `--no-kv-unified` restores the divided layout. Environment
+overrides use `SWIFT_KV_UNIFIED=1` or `0` and `SWIFT_PARALLEL=N`.
+For two 64K slots, when the GPU/port are free:
+
+```bash
+# First terminal (temporary settings; no profile changes):
+LLAMA_SCOPE=swift15-trial-slots python3 llama.py start swift15 --port 1238 --parallel 2 --context 131072 --no-kv-unified
+# Second terminal:
+python3 experiments/agentic_slots.py swift15 --port 1238 --threads 2
+# Stop only this trial, after the test:
+LLAMA_SCOPE=swift15-trial-slots python3 llama.py stop swift15
+```
+
+Use the direct backend port exposing `/slots`, not llama-swap's public port.
+The test refuses a busy backend or fewer slots than threads. `--allow-queue`
+explicitly permits a queueing test and labels it accordingly. `--thinking xhigh`
+enables reasoning; the default is off to keep this first check short. Each agent
+has a `--timeout` (default 300 seconds), after which only its own process group
+is terminated. The script never starts or stops the model server. Stop an active
+server only with its owner's authorization and restore its original setup after
+an authorized temporary test.
+
+Validated on 2026-11-04 with the pinned Windows b12001 CUDA 13.4 runtime:
+the default one-slot text/vision smoke passed, followed sequentially by two
+65,536-token MTP slots running two PI agents with thinking off and xhigh.
+Both agents passed in each run; sampling observed two slots processing together.
+The xhigh run completed in 18.91 seconds with a sampled whole-GPU peak of
+20,841 MiB. Each agent made three successful reads. These short fixtures do not
+establish full-64K capacity under real agent histories. Evidence is under
+`logs/swift15/agentic-slots-20261104T191814.547967Z/`. The original one-slot
+128K Swift configuration was restored after testing.
+
+The subsequent [two-thread T3 benchmark](reports/swift15/T3_TWO_SLOTS.md) uses
+real T3 launches and the larger repository-investigation prompt. For concurrent
+runs, calculate combined rates from the captured excerpt with
+`python3 experiments/agentic_timing.py RUN_DIR`. It divides tokens by the union
+of phase intervals across slots, counting overlapping elapsed time once. The
+original `agentic_bench.py finish` summed-time rates remain per-sequence
+aggregates and must not be presented as combined concurrent throughput.
+
+The [unified-KV test with one T3 thread and small helper requests](reports/swift15/UNIFIED_KV_MANUAL.md)
+completed successfully, including a helper while the main conversation exceeded
+64K. Swift now defaults to two slots sharing 128K total, with unified KV enabled.
+A helper consumes part of that same pool; the main conversation has no separate
+128K reservation. The test used tiny helper prompts and does not establish the
+impact of a second long prefill or fully populated concurrent contexts.
+
+The historical [no-pad single-slot baseline](reports/swift15/NO_PAD_BASELINE.md)
+records the A1 model, throughput, thermals and checkpoint measurements.
 
 ### Windows-native profiles
 

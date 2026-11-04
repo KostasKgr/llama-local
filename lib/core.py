@@ -31,7 +31,7 @@ def boolean(value):
     raise ValueError('Boolean setting must be true/false or 1/0')
 
 
-FIELDS = {'kv_unified': boolean, 'parallel': int, 'context': int, 'batch': int, 'ubatch': int, 'draft_max': int, 'port': int,
+FIELDS = {'kv_unified': boolean, 'parallel': int, 'ctx_checkpoints': int, 'context': int, 'batch': int, 'ubatch': int, 'draft_max': int, 'port': int,
           'cache_k': str, 'cache_v': str, 'load_mode': str, 'spec': str}
 
 
@@ -51,11 +51,14 @@ def load(name, overrides=None):
     p.update({k: v for k, v in (overrides or {}).items() if v is not None})
     p.setdefault('parallel', 1)
     p.setdefault('kv_unified', False)
+    p.setdefault('ctx_checkpoints', 2)
     if type(p['kv_unified']) is not bool:
         raise ValueError('kv_unified must be a boolean')
     if (type(p['parallel']) is not int or p['parallel'] <= 0
             or (not p['kv_unified'] and p['context'] % p['parallel'])):
         raise ValueError('Parallel slots must be positive and divide total context')
+    if type(p['ctx_checkpoints']) is not int or p['ctx_checkpoints'] < 0:
+        raise ValueError('Context checkpoints must be zero or positive')
     if any(p[k] <= 0 for k in ('context', 'batch', 'ubatch', 'draft_max')):
         raise ValueError('Context, batch, microbatch and draft maximum must be positive')
     if p['ubatch'] > p['batch'] or not 1 <= p['port'] <= 65535:
@@ -129,7 +132,7 @@ def command(p):
     # Retain displaced prompt states; profiles can raise the default MiB limit.
     args = [str(server), '-m', model_arg(p, p['model']), '--load-mode', p['load_mode'],
             '-ngl', '999', '-fa', 'on', '-c', str(p['context']), '-np', str(p.get('parallel', 1)),
-            '-b', str(p['batch']), '-ub', str(p['ubatch']), '--ctx-checkpoints', '2',
+            '-b', str(p['batch']), '-ub', str(p['ubatch']), '--ctx-checkpoints', str(p['ctx_checkpoints']),
             '--cache-ram', str(p.get('cache_ram', 2048)),
             '--cache-type-k', p['cache_k'], '--cache-type-v', p['cache_v'], '--spec-type', p['spec'],
             '--host', '127.0.0.1', '--port', str(p['port']), '--jinja', '--alias', p['alias'],

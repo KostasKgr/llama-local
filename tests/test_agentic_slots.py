@@ -26,6 +26,14 @@ class SlotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             core.load('swift15', {'kv_unified': 'false'})
 
+    def test_context_checkpoints_are_per_profile(self):
+        args = core.command(core.load('swift15'))
+        self.assertEqual(args[args.index('--ctx-checkpoints') + 1], '2')
+        args = core.command(core.load('swift15', {'ctx_checkpoints': 0}))
+        self.assertEqual(args[args.index('--ctx-checkpoints') + 1], '0')
+        with self.assertRaises(ValueError):
+            core.load('swift15', {'ctx_checkpoints': -1})
+
     def test_agent_requires_successful_tools_and_evidence(self):
         message = {'role': 'assistant', 'provider': 'llama-local', 'model': 'test',
                    'stopReason': 'stop', 'content': [{'type': 'text', 'text': 'EVIDENCE=abc'}]}

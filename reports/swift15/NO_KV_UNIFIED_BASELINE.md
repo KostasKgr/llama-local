@@ -1,4 +1,4 @@
-# Swift 1.5: no-pad agentic baseline, 2026-11-04
+# Swift 1.5: no-unified-KV agentic baseline, 2026-11-04
 
 This is a historical measurement and comparison baseline, not the current
 launcher configuration. It is **one run**, not an average or a bound on normal

@@ -724,8 +724,10 @@ A helper consumes part of that same pool; the main conversation has no separate
 128K reservation. The test used tiny helper prompts and does not establish the
 impact of a second long prefill or fully populated concurrent contexts.
 
-The historical [no-pad single-slot baseline](reports/swift15/NO_PAD_BASELINE.md)
-records the A1 model, throughput, thermals and checkpoint measurements.
+The current [agentic baseline](reports/swift15/BASELINE.md) records throughput,
+thermals and checkpoint measurements for the saved two-slot unified profile.
+The historical [no-unified-KV single-slot baseline](reports/swift15/NO_KV_UNIFIED_BASELINE.md)
+records the same measurements for the earlier A1 configuration.
 
 ### Windows-native profiles
 

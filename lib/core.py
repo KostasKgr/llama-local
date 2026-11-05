@@ -192,10 +192,13 @@ def preflight(p):
         raise ValueError('Profile scope already active')
 
 
-def powershell(script):
+def powershell_exe():
     # User systemd services (llama-swap) do not inherit the Windows PATH entries.
-    exe = shutil.which('powershell.exe') or '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
-    return subprocess.run([exe, '-NoProfile', '-NonInteractive', '-Command', script],
+    return shutil.which('powershell.exe') or '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
+
+
+def powershell(script):
+    return subprocess.run([powershell_exe(), '-NoProfile', '-NonInteractive', '-Command', script],
                           capture_output=True, text=True, timeout=30).stdout.strip()
 
 
@@ -230,6 +233,10 @@ def wait_port(port, free=None, timeout=150):
 
 
 def start(p):
+    # llama-swap starts the next model when the last one's scope exits, while its Windows
+    # server may still hold the shared port and VRAM. Manual starts still refuse at once.
+    if os.environ.get('LLAMA_SWAP_MANAGED') == '1':
+        wait_windows_exit(p, any_runtime=True)
     preflight(p)
     env = dict(os.environ)
     if p.get('platform') == 'windows':
@@ -251,10 +258,11 @@ def start(p):
     os.execvpe(args[0], args, env)
 
 
-def windows_server_running(p):
-    """Whether a server from this profile's runtime directory is still running; other
-    llama-server.exe processes (for example other installs) are never matched."""
-    runtime = windows_root() + '\\runtimes\\' + p['runtime'] + '\\'
+def windows_server_running(p, any_runtime=False):
+    """Whether a server from this profile's runtime directory, or any runtime of this
+    install, is still running; other llama-server.exe processes (for example other
+    installs) are never matched."""
+    runtime = windows_root() + '\\runtimes\\' + ('' if any_runtime else p['runtime'] + '\\')
     script = ("@(Get-Process llama-server -ErrorAction SilentlyContinue | Where-Object { $_.Path -and "
               f"$_.Path.StartsWith('{runtime}', [StringComparison]::OrdinalIgnoreCase) }}).Count")
     return powershell(script) not in ('', '0')
@@ -267,13 +275,13 @@ def stop(p):
     wait_windows_exit(p)
 
 
-def wait_windows_exit(p, timeout=30):
+def wait_windows_exit(p, timeout=30, any_runtime=False):
     """A scope stop signals the WSL side, which terminates the Windows process
     asynchronously; wait so the next model does not load into still-held VRAM."""
     if p.get('platform') != 'windows':
         return
     deadline = time.monotonic() + timeout
-    while windows_server_running(p):
+    while windows_server_running(p, any_runtime):
         if time.monotonic() > deadline:
             raise ValueError('Windows llama-server still running after stop')
         time.sleep(0.5)

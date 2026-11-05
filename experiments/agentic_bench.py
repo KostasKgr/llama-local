@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from experiments import host_memory
 from lib import core, probes
 
 PI_POLICY = Path(__file__).with_name('agentic_bench_pi_policy.json')
@@ -82,20 +83,39 @@ def warm(profile):
     return round(time.monotonic() - t, 1)
 
 
+def stop_sampler(pid):
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+
 def start(args):
     policy = install_pi_policy(args.fixture) if args.fixture else None
-    warm_s = None if args.no_warm else warm(args.profile)
-    log = newest_log(args.profile)
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     out = core.ROOT / 'logs' / args.profile / f'agentic-{stamp}-{args.label}'
     out.mkdir(parents=True)
+    # Sampling starts before warm-up, so the first row is an idle reference and the load is covered.
+    idle = not core.scope_active({'scope': args.profile})
+    host = subprocess.Popen([sys.executable, host_memory.__file__, str(out / 'host.csv'), '--scope', args.profile],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        host_memory.wait_first_row(out / 'host.csv')
+        warm_s = None if args.no_warm else warm(args.profile)
+    except BaseException:
+        stop_sampler(host.pid)
+        raise
+    log = newest_log(args.profile)
+    loaded = host_memory.timestamp()
+    process_cpu = host_memory.process_cpu()
     with (out / 'gpu.csv').open('w') as f:
         sampler = subprocess.Popen(['nvidia-smi', '--query-gpu=' + GPU_FIELDS, '--format=csv,nounits',
                                     '-lms', str(args.interval_ms)], stdout=f, stderr=subprocess.STDOUT,
                                    start_new_session=True)
     meta = {'label': args.label, 'profile': args.profile, 'started': stamp, 'start_temp_c': gpu_temp(), 'warm_s': warm_s,
             'server_log': str(log) if log else None, 'log_offset': log.stat().st_size if log else 0,
-            'sampler_pid': sampler.pid, 'fixture': args.fixture, 'pi_policy': policy,
+            'sampler_pid': sampler.pid, 'host_sampler_pid': host.pid, 'host_idle_reference': idle,
+            'loaded': loaded, 'process_cpu': process_cpu, 'fixture': args.fixture, 'pi_policy': policy,
             'fixture_before': git_state(args.fixture) if args.fixture else None}
     (out / 'meta.json').write_text(json.dumps(meta, indent=2))
     print(out)
@@ -155,10 +175,12 @@ def finish(args):
         text = excerpt.read_text()
         log = Path(json.loads((out / 'summary.json').read_text())['server_log'])
     else:
-        try:
-            os.killpg(meta['sampler_pid'], signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        stop_sampler(meta['sampler_pid'])
+        if 'host_sampler_pid' in meta:
+            stop_sampler(meta['host_sampler_pid'])
+            elapsed = time.time() - datetime.strptime(meta['loaded'], '%Y%m%dT%H%M%SZ').replace(tzinfo=timezone.utc).timestamp()
+            (out / 'process-cpu.json').write_text(json.dumps(
+                host_memory.top_cpu(meta.get('process_cpu', {}), host_memory.process_cpu(), elapsed), indent=2))
         log = newest_log(meta['profile'])
         # A server restart during the run produces a new log; read that one from the start.
         offset = meta['log_offset'] if log and str(log) == meta['server_log'] else 0
@@ -201,6 +223,12 @@ def finish(args):
                                  'tok_s': rate([r], 'prefill_ms', 'prefill_tokens')}
                                 for r in rows if r.get('full_reprocess') and r.get('prefill_ms')]
     summary['gpu'] = summarize_gpu(out / 'gpu.csv')
+    if (out / 'host.csv').exists():
+        summary['host_memory'] = host_memory.summarize(out / 'host.csv', meta['loaded'], meta['host_idle_reference'])
+        summary['prompt_cache_peak_mib'] = host_memory.prompt_cache_peak(text)
+        summary['cpu'] = host_memory.summarize_cpu(out / 'host.csv', meta['loaded'])
+        if (out / 'process-cpu.json').exists():
+            summary['cpu']['top_process_cores'] = json.loads((out / 'process-cpu.json').read_text())
     if meta['fixture']:
         after = git_state(meta['fixture'])
         summary['fixture_unchanged'] = after == meta['fixture_before']

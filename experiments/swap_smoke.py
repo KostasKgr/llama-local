@@ -23,26 +23,28 @@ def interrupted(signum, frame):
     raise KeyboardInterrupt
 
 
-def run(port=1235, backend_port=1236):
-    swap.ports(port, backend_port)
+def run(port=1235, backend_port=1236, windows_backend_port=1257):
+    swap.ports(port, backend_port, windows_backend_port)
     if swap.managed() or swap.service_state() not in ('inactive', 'failed'):
         raise ValueError('llama-swap is active; leave its owner running')
     if probes.gpu()[0] > 2048:
         raise ValueError('GPU is occupied; leave its owner running and retry when free')
     if not os.access(swap.binary(), os.X_OK):
         raise ValueError('Run python3 llama.py swap install first')
-    swap.preflight(port, backend_port)
+    swap.preflight(port, backend_port, windows_backend_port)
+    # A Windows server may have just released the public port (see core.wait_port).
+    core.wait_port(port)
     token = uuid.uuid4().hex
     scopes = {name: name + '-trial-' + token for name in swap.PROFILES}
-    config = json.loads(swap.config(port, backend_port))
+    config = json.loads(swap.config(port, backend_port, windows_backend_port))
     aliases = {name: core.load(name)['alias'] for name in scopes}
     for name, alias in aliases.items():
-        config['models'][alias]['env'] = ['LLAMA_SCOPE=' + scopes[name]]
+        config['models'][alias]['env'] = ['LLAMA_SWAP_MANAGED=1', 'LLAMA_SCOPE=' + scopes[name]]
     out = core.ROOT / 'logs' / 'swap' / datetime.now(timezone.utc).strftime('smoke-%Y%m%dT%H%M%S.%fZ')
     out.mkdir(parents=True)
     (out / 'config.yaml').write_text(json.dumps(config, indent=2) + '\n')
     record = {'stable': False, 'scopes': scopes, 'switches': [], 'port': port,
-              'backend_port': backend_port}
+              'backend_port': backend_port, 'windows_backend_port': windows_backend_port}
     process = None
     base = f'http://127.0.0.1:{port}'
     try:
@@ -124,9 +126,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=1235)
     parser.add_argument('--backend-port', type=int, default=1236)
+    parser.add_argument('--windows-backend-port', type=int, default=1257)
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, interrupted)
-    run(args.port, args.backend_port)
+    run(args.port, args.backend_port, args.windows_backend_port)
 
 
 if __name__ == '__main__':

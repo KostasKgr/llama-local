@@ -51,12 +51,12 @@ class CoreTests(unittest.TestCase):
     def test_bolt_dflash_and_disable(self):
         p = core.load('bolt35')
         args = core.command(p)
-        self.assertIn('b11808-cuda13.4', args[0])
+        self.assertIn('win-b12110-cuda13.4', args[0])
         for flag, value in {'-c': '65536', '--spec-type': 'draft-dflash',
                             '--spec-draft-n-max': '7', '-ngld': '999',
                             '--temp': '1.0', '--top-p': '0.95', '--top-k': '0'}.items():
             self.assertEqual(args[args.index(flag) + 1], value)
-        self.assertEqual(args[args.index('-md') + 1], str(core.ROOT / 'models' / p['draft']))
+        self.assertEqual(args[args.index('-md') + 1], core.model_arg(p, p['draft']))
         args = core.command(core.load('bolt35', {'spec': 'none'}))
         for flag in ('-md', '-ngld', '--spec-draft-n-max'):
             self.assertNotIn(flag, args)
@@ -65,19 +65,20 @@ class CoreTests(unittest.TestCase):
 
     def test_bolt_preflight_independent_artifacts(self):
         p = core.load('bolt35')
-        available = {core.ROOT / 'models' / p[k] for k in ('model', 'draft')}
+        models = core.artifact_root(p) / 'models'
+        available = {models / p[k] for k in ('model', 'draft')}
         with patch('lib.swap.guard'), patch('lib.core.os.access', return_value=True), \
                 patch.object(Path, 'is_file', autospec=True, side_effect=lambda path: path in available), \
                 patch('lib.core.socket.socket') as sock, patch.object(core, 'scope_active', return_value=False):
             sock.return_value.__enter__.return_value.connect_ex.return_value = 1
             core.preflight(p)
             for key in ('model', 'draft'):
-                path = core.ROOT / 'models' / p[key]
+                path = models / p[key]
                 available.remove(path)
                 with self.assertRaisesRegex(ValueError, 'artifact missing'):
                     core.preflight(p)
                 available.add(path)
-            available.remove(core.ROOT / 'models' / p['draft'])
+            available.remove(models / p['draft'])
             core.preflight(core.load('bolt35', {'spec': 'none'}))
 
     def test_qwen_shards_required_without_speculation(self):
@@ -90,7 +91,7 @@ class CoreTests(unittest.TestCase):
 
     def test_start_captures_both_streams_and_preserves_failure(self):
         with tempfile.TemporaryDirectory() as temp:
-            p = core.load('bolt35')
+            p = core.load('bonsai2')
             command = ['bash', '-c', 'echo output; echo error >&2; exit 7']
             def execute(file, args, env):
                 # Exercise the actual logging pipeline without starting a GPU server.
@@ -103,7 +104,7 @@ class CoreTests(unittest.TestCase):
                     patch('lib.core.os.execvpe', side_effect=execute):
                 core.start(p)
                 core.start(p)
-            logs = list((Path(temp) / 'logs' / 'bolt35').glob('*/server.log'))
+            logs = list((Path(temp) / 'logs' / 'bonsai2').glob('*/server.log'))
             self.assertEqual(len(logs), 2)
             for log in logs:
                 self.assertEqual(log.read_text(), 'output\nerror\n')
@@ -166,9 +167,10 @@ class CoreTests(unittest.TestCase):
             with patch.object(core, 'load_env_file', return_value={'LLAMA_WINDOWS_ROOT': value}):
                 with self.assertRaisesRegex(ValueError, 'LLAMA_WINDOWS_ROOT'):
                     core.windows_root()
-        bolt = core.load('bolt35')
-        self.assertEqual(bolt['platform'], 'linux')
-        self.assertEqual(core.command(bolt)[0], str(core.ROOT / 'runtimes' / bolt['runtime'] / 'llama-server'))
+        self.assertEqual(core.load('bolt35')['platform'], 'windows')
+        bonsai = core.load('bonsai2')
+        self.assertEqual(bonsai['platform'], 'linux')
+        self.assertEqual(core.command(bonsai)[0], str(core.ROOT / 'runtimes' / bonsai['runtime'] / 'llama-server'))
         with patch('lib.core.json.loads', return_value={**core.json.loads(
                 (core.ROOT / 'profiles' / 'bolt35.json').read_text()), 'platform': 'macos'}):
             with self.assertRaisesRegex(ValueError, 'platform'):
@@ -215,6 +217,36 @@ class CoreTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'cannot bind'):
                 core.wait_port(1257, core.windows_port_free)
 
+    def test_swap_start_waits_for_the_previous_windows_server(self):
+        p = core.load('swift15')
+        calls = []
+        with patch.dict('os.environ', {'LLAMA_SWAP_MANAGED': '1'}), \
+                patch.object(core, 'windows_server_running',
+                             side_effect=lambda *a: calls.append(('running', a[1])) or len(calls) < 2), \
+                patch.object(core, 'preflight', side_effect=lambda p: calls.append('preflight')), \
+                patch.object(core, 'wait_port', side_effect=RuntimeError('stop here')), patch('lib.core.time.sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'stop here'):
+                core.start(p)
+        # Bolt and Swift can pin different runtimes, so any runtime of this install counts.
+        self.assertEqual(calls, [('running', True), ('running', True), 'preflight'])
+
+    def test_manual_start_refuses_a_running_server_at_once(self):
+        with patch.dict('os.environ'), patch.object(core, 'windows_server_running') as running, \
+                patch.object(core, 'preflight', side_effect=ValueError('Port 1257 occupied')):
+            core.os.environ.pop('LLAMA_SWAP_MANAGED', None)
+            with self.assertRaisesRegex(ValueError, 'occupied'):
+                core.start(core.load('swift15'))
+        running.assert_not_called()
+
+    def test_server_match_is_limited_to_this_install(self):
+        p = core.load('swift15')
+        with patch.object(core, 'powershell', return_value='0') as shell:
+            core.windows_server_running(p)
+            core.windows_server_running(p, any_runtime=True)
+        one, every = (c.args[0] for c in shell.call_args_list)
+        self.assertIn(core.windows_root() + '\\runtimes\\' + p['runtime'] + '\\', one)
+        self.assertIn("StartsWith('" + core.windows_root() + "\\runtimes\\'", every)
+
     def test_windows_stop_waits_for_server_exit(self):
         p = core.load('swift15')
         with patch('lib.swap.guard'), patch('lib.core.subprocess.run') as run, \
@@ -225,7 +257,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(running.call_count, 2)
         with patch('lib.swap.guard'), patch('lib.core.subprocess.run'), \
                 patch.object(core, 'windows_server_running') as running:
-            core.stop(core.load('bolt35'))
+            core.stop(core.load('bonsai2'))
         running.assert_not_called()
 
     def test_linux_port_wait(self):

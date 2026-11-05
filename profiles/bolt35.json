@@ -1,5 +1,6 @@
 {
-  "runtime": "b11808-cuda13.4",
+  "runtime": "win-b12110-cuda13.4",
+  "platform": "windows",
   "model": "bolt35/Nemotron-3.5-Bolt-E4B-Q4_K_M.gguf",
   "context": 65536,
   "batch": 2048,

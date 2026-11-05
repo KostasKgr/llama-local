@@ -45,7 +45,7 @@ registration are available through the explicit commands below.
 | qwen36 | b11433 | 131072 | f16/f16 | 4096/2048 | separate DFlash, max 8 |
 | bonsai2 | b11669 | 131072 | f16/f16 | 2048/512 | none |
 | bonsai2mtp | prism-b10777-e3de715 | 131072 | f16/f16 | 2048/512 | embedded MTP, max 2 |
-| bolt35 | b11808 CUDA 13.4 | 65536 | f16/f16 | 2048/512 | separate DFlash, max 7 |
+| bolt35 | b12110 CUDA 13.4, Windows-native | 65536 | f16/f16 | 2048/512 | separate DFlash, max 7 |
 
 All profiles use full layer offload, Flash Attention, Direct I/O loading,
 two checkpoints and 2 GiB RAM prompt cache, except Swift's 4 GiB
@@ -58,7 +58,8 @@ guarantee retention of every long prompt.
 Scopes throttle host memory above MemoryHigh=8G and use a hard MemoryMax=9G
 limit with MemorySwapMax=0. If memory cannot be reclaimed at the
 9 GiB limit, the scope's OOM killer terminates the offending process. These
-limits apply to host RAM, not VRAM.
+limits apply to host RAM, not VRAM, and only reach WSL processes: a Windows-native
+server (Swift, Bolt) runs outside the scope's cgroup, so neither limit applies to it.
 Qwen uses `--fit off`. Runtime upgrades require independent model validation.
 
 Swift15 also loads `mmproj-Swift-1.5-Qwen3.8-27B-F16.gguf` for image input.
@@ -141,10 +142,12 @@ disables MTP for comparisons. The upstream `bonsai2` profile remains available.
 Bolt uses the official NVIDIA `Nemotron-3.5-Bolt-E4B-Q4_K_M.gguf` target and
 `Nemotron-3.5-Bolt-E4B-DFlash-BF16.gguf` drafter, pinned to immutable revisions in
 `manifests/models.json`. Together they occupy 6,917,258,304 bytes on disk; the
-model's “4GB” name is not a full-context VRAM guarantee. It uses a separate
-upstream b11808 CUDA 13.4 runtime and matching libraries, with no CUDA 12 Bolt
-variant. Existing profiles retain their runtime pins. No driver/toolkit change
+model's “4GB” name is not a full-context VRAM guarantee. It shares Swift's Windows
+b12110 CUDA 13.4 runtime, with no CUDA 12 Bolt variant. No driver/toolkit change
 is performed. CUDA driver compatibility must be checked on other machines.
+Full offload still leaves 3536 MiB of embedding tables in host RAM
+(`per_layer_token_embd` and `token_embd`), which llama.cpp keeps out of VRAM; peak
+resident memory is about 5.7 GiB with a typical prompt cache.
 Sources: [target card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB),
 [drafter card](https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-4GB-DFlash),
 [runtime release](https://github.com/ggml-org/llama.cpp/releases/tag/b11808).
@@ -169,7 +172,18 @@ chat template is installed. Context includes prompt and generated tokens.
 Batch sizing and f16 KV are provisional settings, not tuned performance defaults.
 Overrides use `BOLT35_*`; `--spec none` omits the drafter for baseline decoding.
 
-Validated on 2026-10-25 with b11808 commit `4912ac24f`, bundled CUDA runtime
+On 2026-11-05 Bolt moved from WSL b11808 to Windows b12110 CUDA 13.4 (commit
+`cd959bae9`; runtime `win-b12110-cuda13.4`); flags are unchanged. Against six WSL
+runs, eight agentic runs prefilled 15–24% faster and decoded 10–14% slower, for
+about 3–8% more server time per run. Median CPU package power fell from about 39 W
+to 28 W, and the user reported silent fans where WSL had driven them high. Resident
+RAM is unchanged, but it now returns to the system at exit instead of staying in the
+WSL VM. Platform and build changed together, so these are not separated. See
+`reports/bolt35/BASELINE.md`. To roll back, stop llama-swap or the server, set
+`runtime` to `b11808-cuda13.4`, remove `platform`, and restart; the WSL runtime and
+weights stay installed.
+
+Validated on 2026-10-25 with the then-pinned b11808 commit `4912ac24f`, bundled CUDA runtime
 13040 and RTX 5090 Laptop GPU on driver 592.27: artifact verification, 64K
 configured-context smoke with speculation off/on, thinking on/off, conversational
 mode, streaming, structured tool-call round trips and the registered OpenCode
@@ -335,8 +349,9 @@ python3 experiments/pi_smoke.py bolt35 --port 1236 --context 32768
 ```
 
 Behind llama-swap, point the smoke at the loaded backend (`--port 1236` for WSL
-profiles, `--port 1257` for Windows profiles such as `swift15`); the coordinator's
-own `/health` returns plain `OK`, not the server's JSON.
+profiles, `--port 1257` for Windows profiles such as `swift15` and `bolt35`); the
+coordinator's own `/health` returns plain `OK`, not the server's JSON. The port covers
+the smoke's direct checks; with `LLAMA_PI_BASE_URL` set, PI's own requests use that URL.
 
 The smoke runner never starts or stops a server. It uses a temporary working
 directory and PI agent directory, registers through the actual CLI, verifies
@@ -366,8 +381,8 @@ or profile defaults changed.
 ## On-demand Bolt and Swift with llama-swap
 
 The optional coordinator exposes exactly the existing Bolt and Swift aliases at
-`http://127.0.0.1:1235/v1`. WSL backends (Bolt) use private port 1236 and Windows
-backends (Swift) private port 1257. Only one model runs at a time: switching stops
+`http://127.0.0.1:1235/v1`. Both run natively on Windows behind private port 1257;
+port 1236 remains for WSL backends. Only one model runs at a time: switching stops
 the current backend before starting the next.
 Other profiles remain available for manual launching and are not listed by swap.
 The coordinator does not load models at startup or unload them on an idle timer.
@@ -610,6 +625,9 @@ policy `experiments/agentic_bench_pi_policy.json` into the trusted fixture,
 `finish RUN_DIR [--max-context N]` summarizes decode/prefill by context range,
 MTP acceptance, power, throttle reasons and temperature, and `cool` waits for the
 GPU to cool. The prompt and procedure are in `reports/swift15/AGENTIC_PROMPT.md`.
+`start` also runs `experiments/host_memory.py`, which samples host RAM and CPU load
+into `host.csv`, from before the model loads until `finish`. Compare Windows
+figures across platforms: a Windows server's scope cgroup reads near zero.
 The prefill and DFlash workloads remain distinct. They share HTTP, GPU telemetry
 and owned-scope cleanup. Fresh-process probes use unique trial scopes and always
 stop their own servers, including on failure. Production servers use fixed
@@ -670,7 +688,13 @@ Agentic run, through llama-swap so PI keeps its model name:
    compare decode by context range, first-request prefill, acceptance, busy
    samples, power-cap share, thermal reasons, power and temperature with earlier
    runs in `reports/swift15/`. Fan speed and CPU temperature cannot be read
-   without Windows admin rights; record user-reported fan RPM with times.
+   without Windows admin rights; record user-reported fan RPM with times. RAPL
+   package power in the summary's `cpu` block is the available proxy for CPU heat.
+
+For Bolt use `--profile bolt35`, `thinking` = `high` and `--max-context 57344`, as PI
+compacts its 64K window at 57392 tokens. T3 reports `completed` even when Bolt's first
+turn wrote a tool call as text and stopped, so check the PI session for tool calls and
+all five file reads before counting a run. See `reports/bolt35/BASELINE.md`.
 
 ### Concurrent agent slot test
 
@@ -754,12 +778,14 @@ default `/mnt/c` automount.
   pinned release zips (llama.cpp and its bundled CUDA runtime DLLs) there, extracts
   the zips and records `installation.json`; `verify swift15` re-checks the hashes.
   Swift's model exists only there; the WSL copy under `models/swift15/` was removed.
+  Bolt's WSL copy under `models/bolt35/` is kept for rollback.
 - **Start/stop:** `llama.py start` converts model paths to Windows paths and runs
   the exe from its runtime directory. Stopping the scope (SIGTERM or SIGKILL)
   terminates the Windows process through interop; `llama.py stop` and llama-swap
   cleanup also wait until no `llama-server.exe` from this runtime directory is left,
-  so the next model never loads into still-held VRAM. Other Windows processes are
-  never matched.
+  so the next model never loads into still-held VRAM. llama-swap moves on as soon as
+  the scope exits, so under it `start` also waits for any server from this install's
+  runtimes to exit first. Other Windows processes are never matched.
 - **Ports:** under mirrored networking, a port released by one side stays
   unbindable for the other for about a minute. Windows backends therefore get their
   own llama-swap port (1257), and starts wait up to 150 s for the port to become

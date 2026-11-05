@@ -84,7 +84,8 @@ def run(name, port=None, context=None, timeout=180):
             env = dict(os.environ, PI_CODING_AGENT_DIR=str(agent), PI_OFFLINE='1', PI_TELEMETRY='0')
 
             def execute(label, command):
-                result = subprocess.run(command, cwd=work, env=env, capture_output=True,
+                # pi --print reads piped stdin first, so an inherited open one blocks it forever.
+                result = subprocess.run(command, cwd=work, env=env, capture_output=True, stdin=subprocess.DEVNULL,
                                         text=True, timeout=timeout)
                 (out / f'{label}.stdout').write_text(result.stdout)
                 (out / f'{label}.stderr').write_text(result.stderr)

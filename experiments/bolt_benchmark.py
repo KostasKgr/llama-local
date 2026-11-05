@@ -147,6 +147,8 @@ def run(spec, repeats, client):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+            # The next trial must not load into VRAM a Windows server still holds.
+            core.wait_windows_exit(p)
         (out / 'result.json').write_text(json.dumps(record, indent=2) + '\n')
         print(out, flush=True)
     return record

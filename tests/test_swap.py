@@ -36,6 +36,7 @@ class SwapTests(unittest.TestCase):
             self.assertEqual(shlex.split(entry['cmd'])[-2:], ['--port', port])
             self.assertEqual(entry['proxy'], 'http://127.0.0.1:' + port)
         self.assertEqual(core.load('swift15')['platform'], 'windows')
+        self.assertEqual(swap.profile_port({'platform': 'linux'}, 1236, 1257), 1236)
         with self.assertRaises(ValueError):
             swap.config(1235, 1236, 1235)
         with patch('lib.swap.socket.socket') as sock, patch.object(core, 'preflight') as preflight:
@@ -44,7 +45,7 @@ class SwapTests(unittest.TestCase):
             checked = [c.args[0] for c in sock.return_value.__enter__.return_value.connect_ex.call_args_list]
             self.assertEqual(checked, [('127.0.0.1', 1235), ('127.0.0.1', 1236), ('127.0.0.1', 1257)])
             self.assertEqual({c.args[0]['scope']: c.args[0]['port'] for c in preflight.call_args_list},
-                             {'bolt35': 1236, 'swift15': 1257})
+                             {'bolt35': 1257, 'swift15': 1257})
 
     def test_config_is_read_only_and_quotes_paths(self):
         with tempfile.TemporaryDirectory(prefix='swap path ') as temp:

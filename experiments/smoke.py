@@ -82,5 +82,7 @@ finally:
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+        # A following run must not find a Windows server still holding the port and VRAM.
+        core.wait_windows_exit(p)
     (out / 'result.json').write_text(json.dumps(record, indent=2) + '\n')
 print(out)

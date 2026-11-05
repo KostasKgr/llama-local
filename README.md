@@ -41,7 +41,7 @@ registration are available through the explicit commands below.
 
 | Profile | Runtime | Context | KV | Batch/microbatch | Speculation |
 | --- | --- | ---: | --- | --- | --- |
-| swift15 | b12001 CUDA 13.4, Windows-native | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
+| swift15 | b12110 CUDA 13.4, Windows-native | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
 | qwen36 | b11433 | 131072 | f16/f16 | 4096/2048 | separate DFlash, max 8 |
 | bonsai2 | b11669 | 131072 | f16/f16 | 2048/512 | none |
 | bonsai2mtp | prism-b10777-e3de715 | 131072 | f16/f16 | 2048/512 | embedded MTP, max 2 |
@@ -93,6 +93,16 @@ and `reports/swift15/WINDOWS_NATIVE.md`. The WSL model copy was removed. To roll
 back to WSL, set `runtime` to `b12001-cuda13.4`, remove `platform`, run `python3
 llama.py install swift15` (downloads the model to `models/swift15/` again), and
 restart the server or llama-swap.
+
+On 2026-11-04 Swift moved to Windows b12110 CUDA 13.4 (commit `cd959bae9`, llama.cpp
+v0.9.0; runtime `win-b12110-cuda13.4`); flags are unchanged. Against the single b12001
+run in `reports/swift15/B12001_BASELINE.md`, two capped agentic runs decoded 81 / 65 / 47 tok/s
+by context range (+4% / 0% / -2%) and later-turn prefill rose 3–6%, all within normal
+run-to-run variation. Two concurrent slots were not tested on this build. The new
+K/V-rows attention path, on by default with unified KV, costs about 1–4% decode above
+64K with MTP and gains 2–3% prefill; `LLAMA_KV_ROWS_DISABLE` turns it off. See
+`reports/swift15/B12110_COMPARISON.md`. To roll back, stop llama-swap or the server
+first, set `runtime` to `win-b12001-cuda13.4`, and restart; that runtime stays installed.
 
 Validated on 2026-10-19 with the then-pinned b11393 runtime, 128K context and MTP
 enabled: text chat, red/blue API image recognition, tool-call formatting and
@@ -726,7 +736,8 @@ impact of a second long prefill or fully populated concurrent contexts.
 
 The current [agentic baseline](reports/swift15/BASELINE.md) records throughput,
 thermals and checkpoint measurements for the saved two-slot unified profile.
-The historical [no-unified-KV single-slot baseline](reports/swift15/NO_KV_UNIFIED_BASELINE.md)
+The historical [b12001 baseline](reports/swift15/B12001_BASELINE.md) is retained for
+comparison. The historical [no-unified-KV single-slot baseline](reports/swift15/NO_KV_UNIFIED_BASELINE.md)
 records the same measurements for the earlier A1 configuration.
 
 ### Windows-native profiles

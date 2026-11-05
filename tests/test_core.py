@@ -110,7 +110,7 @@ class CoreTests(unittest.TestCase):
 
     def test_preserved_profiles(self):
         for name, runtime, spec, batch, ubatch, kv in [
-            ('swift15', 'win-b12001-cuda13.4', 'draft-mtp', 2048, 512, 'q8_0'),
+            ('swift15', 'win-b12110-cuda13.4', 'draft-mtp', 2048, 512, 'q8_0'),
             ('qwen36', 'b11433-cuda12.8', 'draft-dflash', 4096, 2048, 'f16')]:
             p = core.load(name)
             self.assertEqual((p['runtime'], p['spec'], p['batch'], p['ubatch'], p['cache_k']),
@@ -158,7 +158,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(p['platform'], 'windows')
         with patch.object(core, 'load_env_file', return_value={'LLAMA_WINDOWS_ROOT': 'D:\\Inference\\'}):
             args = core.command(p)
-            self.assertEqual(args[0], '/mnt/d/Inference/runtimes/win-b12001-cuda13.4/llama-server.exe')
+            self.assertEqual(args[0], '/mnt/d/Inference/runtimes/win-b12110-cuda13.4/llama-server.exe')
             self.assertEqual(args[args.index('-m') + 1],
                              'D:\\Inference\\models\\swift15\\Swift-1.5-Qwen3.8-27B-GSQ-RCO-IQ3_S-mtp.gguf')
             self.assertEqual(core.artifact_root(p), Path('/mnt/d/Inference'))

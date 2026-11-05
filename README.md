@@ -180,8 +180,9 @@ to 28 W, and the user reported silent fans where WSL had driven them high. Resid
 RAM is unchanged, but it now returns to the system at exit instead of staying in the
 WSL VM. Platform and build changed together, so these are not separated. See
 `reports/bolt35/BASELINE.md`. To roll back, stop llama-swap or the server, set
-`runtime` to `b11808-cuda13.4`, remove `platform`, and restart; the WSL runtime and
-weights stay installed.
+`runtime` to `b11808-cuda13.4`, remove `platform`, run `python3 llama.py install
+bolt35` (downloads the model to `models/bolt35/` again), and restart. The WSL runtime
+stays installed; the WSL model copy was removed.
 
 Validated on 2026-10-25 with the then-pinned b11808 commit `4912ac24f`, bundled CUDA runtime
 13040 and RTX 5090 Laptop GPU on driver 592.27: artifact verification, 64K
@@ -777,8 +778,8 @@ default `/mnt/c` automount.
   `python3 llama.py install swift15` downloads and verifies the model and the two
   pinned release zips (llama.cpp and its bundled CUDA runtime DLLs) there, extracts
   the zips and records `installation.json`; `verify swift15` re-checks the hashes.
-  Swift's model exists only there; the WSL copy under `models/swift15/` was removed.
-  Bolt's WSL copy under `models/bolt35/` is kept for rollback.
+  Swift's and Bolt's models exist only there; their WSL copies under `models/` were
+  removed.
 - **Start/stop:** `llama.py start` converts model paths to Windows paths and runs
   the exe from its runtime directory. Stopping the scope (SIGTERM or SIGKILL)
   terminates the Windows process through interop; `llama.py stop` and llama-swap

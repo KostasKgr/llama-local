@@ -126,10 +126,10 @@ class CoreTests(unittest.TestCase):
             with self.subTest(profile=name):
                 args = core.command(core.load(name))
                 self.assertEqual(args[args.index('--cache-ram') + 1],
-                                 '4096' if name == 'swift15' else '2048')
+                                 '16384' if name == 'swift15' else '2048')
         with patch.dict('os.environ', {'LLAMA_SCOPE': 'swift15-trial-cache'}):
             args = core.command(core.load('swift15'))
-            self.assertEqual(args[args.index('--cache-ram') + 1], '4096')
+            self.assertEqual(args[args.index('--cache-ram') + 1], '16384')
 
     def test_owned_scope_validation(self):
         with patch.dict('os.environ', {'LLAMA_SCOPE': 'unrelated'}):

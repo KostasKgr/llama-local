@@ -9,7 +9,8 @@ class SlotTests(unittest.TestCase):
         args = core.command(p)
         self.assertEqual(args[args.index('-np') + 1], '2')
         self.assertEqual(args[args.index('-c') + 1], '131072')
-        self.assertEqual(core.load('swift15')['parallel'], 2)
+        self.assertEqual(core.load('swift15')['parallel'], 1)
+        self.assertNotIn('--kv-unified', core.command(core.load('swift15')))
         for slots in (0, -1, 3, True):
             with self.subTest(slots=slots), self.assertRaises(ValueError):
                 core.load('swift15', {'parallel': slots, 'kv_unified': False})
@@ -28,7 +29,7 @@ class SlotTests(unittest.TestCase):
 
     def test_context_checkpoints_are_per_profile(self):
         args = core.command(core.load('swift15'))
-        self.assertEqual(args[args.index('--ctx-checkpoints') + 1], '2')
+        self.assertEqual(args[args.index('--ctx-checkpoints') + 1], '20')
         args = core.command(core.load('swift15', {'ctx_checkpoints': 0}))
         self.assertEqual(args[args.index('--ctx-checkpoints') + 1], '0')
         with self.assertRaises(ValueError):

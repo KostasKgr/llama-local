@@ -8,8 +8,8 @@
   "ubatch": 512,
   "cache_k": "q8_0",
   "cache_v": "q8_0",
-  "cache_ram": 4096,
-  "ctx_checkpoints": 2,
+  "cache_ram": 16384,
+  "ctx_checkpoints": 20,
   "spec": "draft-mtp",
   "draft_max": 3,
   "alias": "swift-1.5-qwen3.8-27b-iq3s-mtp",
@@ -50,6 +50,6 @@
       }
     }
   },
-  "parallel": 2,
-  "kv_unified": true
+  "parallel": 1,
+  "kv_unified": false
 }

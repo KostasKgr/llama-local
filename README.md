@@ -33,9 +33,9 @@ Only one profile can use the default port at a time. Start refuses an occupied
 port or active profile scope. Servers bind `127.0.0.1:1235`; API base is
 `http://127.0.0.1:1235/v1`. Existing model aliases are preserved:
 `swift-1.5-qwen3.8-27b-iq3s-mtp` and `qwen3.6-35b-a3b-iq3s-dflash`.
-Swift uses two slots sharing a single 131072-token unified KV pool. Each slot
-can use up to that limit, but simultaneous conversations share the total capacity;
-128K is not reserved independently for each. Other profiles use one slot.
+Swift uses one 131072-token slot with unified KV disabled. Concurrent client
+requests queue for that slot; cached conversation states may be swapped through
+the RAM prompt cache. Other profiles also use one slot.
 Select the alias for the running profile in your client. OpenCode and PI
 registration are available through the explicit commands below.
 
@@ -48,11 +48,13 @@ registration are available through the explicit commands below.
 | bolt35 | b12110 CUDA 13.4, Windows-native | 65536 | f16/f16 | 2048/512 | separate DFlash, max 7 |
 
 All profiles use full layer offload, Flash Attention, Direct I/O loading,
-two checkpoints and 2 GiB RAM prompt cache, except Swift's 4 GiB
-(`"cache_ram": 4096` MiB in `profiles/swift15.json`). OpenCode thread naming can displace
+two checkpoints and 2 GiB RAM prompt cache, except Swift's twenty checkpoints and 16 GiB
+(`"cache_ram": 16384` MiB in `profiles/swift15.json`). Swift uses the runtime's
+default minimum checkpoint spacing of 8192 tokens; this is a minimum, not an
+exact periodic checkpoint schedule. OpenCode thread naming can displace
 the main prompt and cause cache thrashing when the RAM cache is too small.
 Swift's cache limit was raised after a 2302 MiB prompt state exceeded the old
-2048 MiB limit; this takes effect on the next server launch. A larger cache
+2048 MiB limit, and is now 16384 MiB. A larger cache
 cannot reuse a changed prefix without compatible state/checkpoints and does not
 guarantee retention of every long prompt.
 Scopes throttle host memory above MemoryHigh=8G and use a hard MemoryMax=9G
@@ -710,8 +712,8 @@ samples and the summary remain under ignored `logs/<profile>/agentic-slots-*`.
 Sampled peaks can miss brief memory/concurrency spikes. Whole-GPU memory includes
 other applications. Concurrent agents share GPU throughput.
 
-The launcher accepts `--parallel N`; `--context` is **total** context, divided among slots when unified KV is off. Swift defaults to two slots and unified KV with the existing 128K total pool;
-other profiles default to one slot. With `--kv-unified`, context is shared
+The launcher accepts `--parallel N`; `--context` is **total** context, divided among slots when unified KV is off. Swift defaults to one slot with unified KV disabled;
+other profiles also default to one slot. With `--kv-unified`, context is shared
 instead of divided. `--no-kv-unified` restores the divided layout. Environment
 overrides use `SWIFT_KV_UNIFIED=1` or `0` and `SWIFT_PARALLEL=N`.
 For two 64K slots, when the GPU/port are free:
@@ -754,13 +756,20 @@ aggregates and must not be presented as combined concurrent throughput.
 
 The [unified-KV test with one T3 thread and small helper requests](reports/swift15/UNIFIED_KV_MANUAL.md)
 completed successfully, including a helper while the main conversation exceeded
-64K. Swift now defaults to two slots sharing 128K total, with unified KV enabled.
-A helper consumes part of that same pool; the main conversation has no separate
+64K. That historical test used two slots sharing 128K total with unified KV enabled.
+A helper consumed part of that same pool; the main conversation had no separate
 128K reservation. The test used tiny helper prompts and does not establish the
 impact of a second long prefill or fully populated concurrent contexts.
 
-The current [agentic baseline](reports/swift15/BASELINE.md) records throughput,
-thermals and checkpoint measurements for the saved two-slot unified profile.
+The historical [agentic baseline](reports/swift15/BASELINE.md) records throughput,
+thermals and checkpoint measurements for the earlier two-slot unified profile.
+The [long-session concurrency test](reports/swift15/T3_CP10_RAM16_MEMORY.md)
+ended with context-size errors in both threads. Both threads failing is
+unacceptable; Swift now uses one slot, unified KV disabled and twenty checkpoints.
+The [one-slot repeat](reports/swift15/T3_CP20_SINGLE_SLOT_MEMORY.md) handled two
+queued T3 clients to the prompt cap without later full re-prefills or context
+errors. Peak server RAM was 17.95 GiB and Windows available RAM briefly fell to
+806 MiB; the 16 GiB prompt-cache limit does not cap total server memory.
 The historical [b12001 baseline](reports/swift15/B12001_BASELINE.md) is retained for
 comparison. The historical [no-unified-KV single-slot baseline](reports/swift15/NO_KV_UNIFIED_BASELINE.md)
 records the same measurements for the earlier A1 configuration.

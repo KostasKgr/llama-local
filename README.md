@@ -48,13 +48,13 @@ registration are available through the explicit commands below.
 | bolt35 | b12110 CUDA 13.4, Windows-native | 65536 | f16/f16 | 2048/512 | separate DFlash, max 7 |
 
 All profiles use full layer offload, Flash Attention, Direct I/O loading,
-two checkpoints and 2 GiB RAM prompt cache, except Swift's twenty checkpoints and 16 GiB
-(`"cache_ram": 16384` MiB in `profiles/swift15.json`). Swift uses the runtime's
+two checkpoints and 2 GiB RAM prompt cache, except Swift's twenty checkpoints and 10 GiB
+(`"cache_ram": 10240` MiB in `profiles/swift15.json`). Swift uses the runtime's
 default minimum checkpoint spacing of 8192 tokens; this is a minimum, not an
 exact periodic checkpoint schedule. OpenCode thread naming can displace
 the main prompt and cause cache thrashing when the RAM cache is too small.
 Swift's cache limit was raised after a 2302 MiB prompt state exceeded the old
-2048 MiB limit, and is now 16384 MiB. A larger cache
+2048 MiB limit, and is now 10240 MiB. A larger cache
 cannot reuse a changed prefix without compatible state/checkpoints and does not
 guarantee retention of every long prompt.
 Scopes throttle host memory above MemoryHigh=8G and use a hard MemoryMax=9G

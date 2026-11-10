@@ -29,7 +29,7 @@ class PiRegistrationTests(unittest.TestCase):
                 self.assertEqual(models[alias], model)
             model = models[profile['alias']]
             self.assertEqual(model['contextWindow'], profile['context'])
-            self.assertEqual(model['maxTokens'], 8192)
+            self.assertEqual(model['maxTokens'], 16000 if name == 'swift15' else 8192)
             self.assertEqual(model['input'], profile['opencode']['modalities']['input'])
             self.assertEqual(pi.merge(result, profile), result)
             previous = copy.deepcopy(models)

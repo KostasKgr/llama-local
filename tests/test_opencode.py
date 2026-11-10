@@ -63,6 +63,9 @@ class OpenCodeTests(unittest.TestCase):
         self.assertEqual(model['variants'], [])
         self.assertEqual(opencode.merge(result, p), result)
 
+    def test_swift_default_output_limit(self):
+        self.assertEqual(opencode.model_config(core.load('swift15'))['limit']['output'], 16000)
+
     def test_bonsai_mtp_keeps_upstream_entry(self):
         upstream = core.load('bonsai2')
         source = opencode.merge('{}', upstream)

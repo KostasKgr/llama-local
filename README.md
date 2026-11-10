@@ -254,13 +254,13 @@ Registration requires neither GPU access nor installed weights.
 
 Swift advertises text and image input. To update an existing text-only entry, run
 `python3 llama.py opencode add swift15 --update`. Include `--output-tokens N`
-to preserve a custom output limit (otherwise registration uses the 8192 default).
+to preserve a custom output limit (otherwise Swift registration uses the 16000 default).
 Restart an already running Swift server after installing the projector so image
 input is available.
 
 `--config PATH` targets another config. `--context`, `--port` and
 `--output-tokens` match launch overrides and customize advertised limits; they
-do not change the server. Output defaults to 8192 tokens for all profiles.
+do not change the server. Output defaults to 16000 tokens for Swift and 8192 for other profiles.
 Context and port also honor the existing profile environment overrides. Display names describe the
 profile's default context; the numeric `limit.context` reflects overrides.
 
@@ -317,7 +317,7 @@ register each profile against the endpoint that serves it.
 
 `--config PATH`, `--dry-run`, `--update`, `--context`, `--port`, and
 `--output-tokens` follow the OpenCode registration semantics above. Output defaults
-to 8192 tokens; context and port honor the profile's environment overrides, with
+to 16000 tokens for Swift and 8192 for other profiles; context and port honor the profile's environment overrides, with
 CLI arguments taking precedence. These are advertised limits, so launch the
 server with matching overrides. Swift advertises text and image input; other
 profiles advertise text input. The OpenAI chat-completions adapter uses

@@ -24,4 +24,4 @@ tasks:
 
   shell-syntax:
     cmds:
-      - bash -n start_swift15_iq3s_128k.sh start_qwen36.sh start_bonsai2.sh start_bonsai2_mtp.sh start_bolt35.sh
+      - bash -n start_swift15_iq3s_128k.sh start_bolt35.sh

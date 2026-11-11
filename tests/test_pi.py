@@ -37,18 +37,17 @@ class PiRegistrationTests(unittest.TestCase):
 
     def test_models_array_pretty_printed(self):
         result = pi.merge('{}\n', core.load('bolt35'))
-        result = pi.merge(result, core.load('swift15'))
         models_line = next(line for line in result.splitlines() if '"models":' in line)
         self.assertTrue(models_line.rstrip().endswith('['))
         self.assertLess(max(len(line) for line in result.splitlines()), 100)
-        self.assertEqual(len(json.loads(result)['providers'][pi.PROVIDER]['models']), 2)
+        self.assertEqual(len(json.loads(result)['providers'][pi.PROVIDER]['models']), 1)
         # A compact existing array is reprinted pretty when a model is added;
         # only the untouched preamble of the compact input keeps its line.
-        updated = pi.merge(json.dumps(json.loads(result)), core.load('qwen36'))
+        updated = pi.merge(json.dumps(json.loads(result)), core.load('swift15'))
         lines = updated.splitlines()
         self.assertTrue(lines[0].rstrip().endswith('"models": ['))
         self.assertLess(max(len(line) for line in lines[1:]), 100)
-        self.assertEqual(len(json.loads(updated)['providers'][pi.PROVIDER]['models']), 3)
+        self.assertEqual(len(json.loads(updated)['providers'][pi.PROVIDER]['models']), 2)
 
     def test_conflicts_and_update_preserve_custom_metadata(self):
         profile = core.load('bolt35')

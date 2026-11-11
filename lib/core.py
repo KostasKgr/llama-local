@@ -17,9 +17,6 @@ ROOT = Path(__file__).resolve().parent.parent
 # Windows server never loads multi-GB files through the WSL file share.
 WINDOWS_ROOT = r'C:\AI\llama-local'
 PROFILES = {'swift15': ('SWIFT', 'draft-mtp'),
-            'qwen36': ('QWEN', 'draft-dflash'),
-            'bonsai2': ('BONSAI', 'none'),
-            'bonsai2mtp': ('BONSAI_MTP', 'draft-mtp'),
             'bolt35': ('BOLT35', 'draft-dflash')}
 def boolean(value):
     if isinstance(value, bool):

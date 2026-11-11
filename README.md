@@ -1,11 +1,8 @@
 # Local llama.cpp inference
 
-One WSL/Linux repository for Swift 1.5 IQ3_S MTP, Qwen3.6 IQ3_S DFlash,
-Ternary Bonsai 2 9B Q2_0 (without speculation), and Nemotron 3.5 Bolt E4B DFlash.
-Each profile pins its own llama.cpp prebuilt runtime (CUDA 13.4 for Swift and
-Bolt, CUDA 12.8 for the others). No source
-build, CUDA toolkit installation, or driver changes are required.
-An optional Bonsai MTP profile uses the PrismML fork and an embedded prediction head.
+One WSL/Linux repository for Swift 1.5 IQ3_S MTP and Nemotron 3.5 Bolt E4B DFlash.
+Both profiles use a pinned Windows-native llama.cpp runtime with CUDA 13.4.
+No source build, CUDA toolkit installation, or driver changes are required.
 
 Requirements: Python 3.12+, curl, working NVIDIA GPU passthrough, systemd user
 manager and cgroup v2. Tested on an RTX 5090 Laptop GPU with 24 GB VRAM.
@@ -13,26 +10,18 @@ manager and cgroup v2. Tested on an RTX 5090 Laptop GPU with 24 GB VRAM.
 ```bash
 cd /projects/inference/llama-local
 python3 llama.py install swift15
-python3 llama.py install qwen36
 python3 llama.py verify swift15
 python3 llama.py start swift15 --dry-run
 python3 llama.py start swift15
 # From another terminal:
 python3 llama.py status
 python3 llama.py stop swift15
-python3 llama.py start qwen36
-# Bonsai shortcut (128K context, upstream runtime):
-python3 llama.py install bonsai2
-./start_bonsai2.sh
-# Bonsai MTP (128K context, Prism runtime):
-python3 llama.py install bonsai2mtp
-./start_bonsai2_mtp.sh
 ```
 
 Only one profile can use the default port at a time. Start refuses an occupied
 port or active profile scope. Servers bind `127.0.0.1:1235`; API base is
 `http://127.0.0.1:1235/v1`. Existing model aliases are preserved:
-`swift-1.5-qwen3.8-27b-iq3s-mtp` and `qwen3.6-35b-a3b-iq3s-dflash`.
+`swift-1.5-qwen3.8-27b-iq3s-mtp` and `nemotron-3.5-bolt-e4b-q4km-dflash`.
 Swift uses one 131072-token slot with unified KV disabled. Concurrent client
 requests queue for that slot; cached conversation states may be swapped through
 the RAM prompt cache. Other profiles also use one slot.
@@ -42,9 +31,6 @@ registration are available through the explicit commands below.
 | Profile | Runtime | Context | KV | Batch/microbatch | Speculation |
 | --- | --- | ---: | --- | --- | --- |
 | swift15 | b12110 CUDA 13.4, Windows-native | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
-| qwen36 | b11433 | 131072 | f16/f16 | 4096/2048 | separate DFlash, max 8 |
-| bonsai2 | b11669 | 131072 | f16/f16 | 2048/512 | none |
-| bonsai2mtp | prism-b10777-e3de715 | 131072 | f16/f16 | 2048/512 | embedded MTP, max 2 |
 | bolt35 | b12110 CUDA 13.4, Windows-native | 65536 | f16/f16 | 2048/512 | separate DFlash, max 7 |
 
 All profiles use full layer offload, Flash Attention, Direct I/O loading,
@@ -62,7 +48,7 @@ limit with MemorySwapMax=0. If memory cannot be reclaimed at the
 9 GiB limit, the scope's OOM killer terminates the offending process. These
 limits apply to host RAM, not VRAM, and only reach WSL processes: a Windows-native
 server (Swift, Bolt) runs outside the scope's cgroup, so neither limit applies to it.
-Qwen uses `--fit off`. Runtime upgrades require independent model validation.
+Runtime upgrades require independent model validation.
 
 Swift15 also loads `mmproj-Swift-1.5-Qwen3.8-27B-F16.gguf` for image input.
 The 927,606,912-byte (885 MiB) projector comes from
@@ -112,34 +98,6 @@ enabled: text chat, red/blue API image recognition, tool-call formatting and
 a green image attached through `opencode run --standalone` all passed.
 The small-image smoke used about 20 GiB of GPU memory; it does not establish
 capacity for large images or a fully populated 128K prompt.
-
-Bonsai uses upstream b11669 (commit `620d2225cc436ab0b001e3200e590e3b286ef9ab`),
-which supports the `prism.hadamard` activation transforms required by Bonsai 2.
-The older pinned runtimes recognize Q2_0 but lack these transforms. Only the
-text model `Ternary-Bonsai-2-9B-Q2_0.gguf` is installed, without a vision projector
-or draft model. Alias: `ternary-bonsai-2-9b-q2_0`. Thinking uses the model card's
-temperature 1.0, top-p 0.95, top-k 20, min-p 0, presence penalty 1.0, repetition
-penalty 1.0 and a 64-token penalty window. OpenCode advertises 131072 context and
-8192 output tokens, with `variants: []`; no reasoning-effort presets are inferred.
-These are initial settings for evaluation, not measured performance defaults.
-Bonsai uses `--fit off` and the `BONSAI_*` environment prefix. Stop it with
-`python3 llama.py stop bonsai2`.
-
-The separate `bonsai2mtp` profile pins PrismML's `prism-b10777-e3de715`
-(commit `e3de715222b2667c54a267441159a5729f11155e`), the release pinned by
-[Bonsai-demo](https://github.com/PrismML-Eng/Bonsai-demo).
-Install downloads `Ternary-Bonsai-2-9B-PQ2_0-MTP-Q8_0.gguf` from
-[the model repository](https://huggingface.co/prism-ml/Ternary-Bonsai-2-9B-gguf),
-with the exact revision, size and SHA-256 in `manifests/models.json`.
-The single GGUF includes the language model and MTP head; no separate draft model
-or vision projector is needed. The Prism binary archive is paired with the pinned
-upstream CUDA 12.8 library archive because Prism's Linux archive omits CUDA libraries.
-It uses the same context, f16 KV cache and sampling as `bonsai2`, with draft depth 2,
-minimum draft length 0 and minimum draft probability 0, following the model card.
-OpenCode alias: `ternary-bonsai-2-9b-pq2_0-mtp` (128K context, 8192 output tokens).
-Use `./start_bonsai2_mtp.sh`, then select that alias in OpenCode; stop with
-`python3 llama.py stop bonsai2mtp`. Overrides use `BONSAI_MTP_*`; `--spec none`
-disables MTP for comparisons. The upstream `bonsai2` profile remains available.
 
 Bolt uses the official NVIDIA `Nemotron-3.5-Bolt-E4B-Q4_K_M.gguf` target and
 `Nemotron-3.5-Bolt-E4B-DFlash-BF16.gguf` drafter, pinned to immutable revisions in
@@ -230,19 +188,17 @@ These synthetic workloads do not establish coding quality or long-context recall
 
 Start overrides: `--context`, `--batch`, `--ubatch`, `--draft-max`, `--spec`,
 `--cache-k`, `--cache-v`, `--load-mode`, `--port`. CLI overrides take precedence
-over the legacy `SWIFT_*` / `QWEN_*` environment variables, which take precedence
+over the legacy `SWIFT_*` / `BOLT35_*` environment variables, which take precedence
 over profiles.
-`SWIFT_SPEC_TYPE` and `QWEN_SPEC_TYPE` are supported.
-`start_swift15_iq3s_128k.sh` and `start_qwen36.sh` remain compatibility entrypoints.
+`SWIFT_SPEC_TYPE` and `BOLT35_SPEC_TYPE` are supported.
+`start_swift15_iq3s_128k.sh` remains a compatibility entrypoint.
 
 ## OpenCode registration
 
 ```bash
-python3 llama.py opencode add qwen36 --dry-run
-python3 llama.py opencode add qwen36
+python3 llama.py opencode add bolt35 --dry-run
+python3 llama.py opencode add bolt35
 python3 llama.py opencode add swift15
-python3 llama.py opencode add bonsai2
-python3 llama.py opencode add bonsai2mtp
 opencode models
 ```
 
@@ -276,8 +232,7 @@ variants are retained, and conflicting managed fields require `--update`.
 baseURL affects every model under `llama.cpp`, so use it only when all registered
 models should use that endpoint. Use a separate config for independent endpoints.
 The v2 entry uses `package`, provider `settings`, model `capabilities` and limits.
-Swift retains its reasoning settings and v2 variant array. Qwen and Bonsai have text
-and tool-call capabilities, without unvalidated reasoning-effort settings.
+Swift retains its reasoning settings and v2 variant array. Bolt has text and tool-call capabilities.
 
 Every actual edit prints a diff, saves a uniquely named backup beside the original
 config, and replaces it atomically while preserving permissions. Invalid JSONC,
@@ -508,8 +463,7 @@ runtime archives without installing or starting a server. Launch checks artifact
 presence; run verification after supplying/replacing files yourself.
 
 Weights, versioned runtimes, downloads and logs are ignored by Git. Installation
-diagnostics live under each runtime as `installation.json`. Qwen's two shards
-must remain adjacent with their original filenames. The first is passed to `-m`.
+diagnostics live under each runtime as `installation.json`.
 
 Every server launch saves combined stdout/stderr to
 `logs/<profile>/<UTC-timestamp>/server.log` and prints the path at startup.
@@ -520,8 +474,7 @@ there is no automatic rotation, pruning, or separate launch metadata file.
 ## Adding a model
 
 Add each model or runtime variant as a separate profile. Keep existing profiles'
-runtime pins and measured defaults unchanged. Start from `profiles/bonsai2.json`
-for ordinary decoding or `profiles/bonsai2mtp.json` for an embedded MTP head.
+runtime pins and measured defaults unchanged. Start from an existing profile as an example.
 The steps below use `newmodel` as the new profile name; replace it throughout.
 
 1. **Check compatibility and pin artifacts.** Confirm that the chosen runtime
@@ -557,7 +510,7 @@ The steps below use `newmodel` as the new profile name; replace it throughout.
    models require every adjacent shard from their own profile manifest, even
    with speculation disabled; DFlash also requires its separate draft file.
    An optional executable `start_newmodel.sh`
-   can follow `start_bonsai2.sh` and forward arguments to `llama.py start newmodel`.
+   can follow `start_bolt35.sh` and forward arguments to `llama.py start newmodel`.
 
 4. **Describe OpenCode capabilities.** Populate the profile's `opencode` object
    using an existing profile as the schema. Set a display name, `output_tokens`
@@ -610,12 +563,7 @@ Stop any existing server before fresh-process probes:
 
 ```bash
 python3 llama.py smoke swift15
-python3 llama.py smoke qwen36
-python3 llama.py smoke bonsai2
-python3 llama.py smoke bonsai2mtp
 python3 experiments/swift_prefill_benchmark.py --repeats 1
-python3 experiments/qwen_benchmark.py --label screening --smoke
-python3 experiments/qwen_run_experiment.py
 ```
 
 Swift's `experiments/swift_benchmark.py` probes an already running server.
@@ -839,7 +787,7 @@ This runs, from `taskfile.yml`:
 ```bash
 python3 -m unittest discover -s tests -v
 python3 -m compileall -q llama.py lib experiments tests
-bash -n start_swift15_iq3s_128k.sh start_qwen36.sh start_bonsai2.sh start_bonsai2_mtp.sh start_bolt35.sh
+bash -n start_swift15_iq3s_128k.sh start_bolt35.sh
 ```
 
 Before committing, `git diff --check` optionally flags whitespace errors and

@@ -81,17 +81,10 @@ class CoreTests(unittest.TestCase):
             available.remove(models / p['draft'])
             core.preflight(core.load('bolt35', {'spec': 'none'}))
 
-    def test_qwen_shards_required_without_speculation(self):
-        p = core.load('qwen36', {'spec': 'none'})
-        with patch('lib.core.os.access', return_value=True), \
-                patch.object(Path, 'is_file', autospec=True,
-                             side_effect=lambda path: '-00002-of-' not in path.name):
-            with self.assertRaisesRegex(ValueError, 'artifact missing'):
-                core.preflight(p)
 
     def test_start_captures_both_streams_and_preserves_failure(self):
         with tempfile.TemporaryDirectory() as temp:
-            p = core.load('bonsai2')
+            p = core.load('bolt35')
             command = ['bash', '-c', 'echo output; echo error >&2; exit 7']
             def execute(file, args, env):
                 # Exercise the actual logging pipeline without starting a GPU server.
@@ -104,22 +97,27 @@ class CoreTests(unittest.TestCase):
                     patch('lib.core.os.execvpe', side_effect=execute):
                 core.start(p)
                 core.start(p)
-            logs = list((Path(temp) / 'logs' / 'bonsai2').glob('*/server.log'))
+            logs = list((Path(temp) / 'logs' / 'bolt35').glob('*/server.log'))
             self.assertEqual(len(logs), 2)
             for log in logs:
                 self.assertEqual(log.read_text(), 'output\nerror\n')
 
+    def test_retired_profiles_are_unavailable(self):
+        for name in ('qwen36', 'bonsai2', 'bonsai2mtp'):
+            with self.subTest(profile=name), self.assertRaisesRegex(ValueError, 'Unknown profile'):
+                core.load(name)
+            self.assertNotIn(name, core.manifest('models'))
+
     def test_preserved_profiles(self):
         for name, runtime, spec, batch, ubatch, kv in [
-            ('swift15', 'win-b12110-cuda13.4', 'draft-mtp', 2048, 512, 'q8_0'),
-            ('qwen36', 'b11433-cuda12.8', 'draft-dflash', 4096, 2048, 'f16')]:
+            ('swift15', 'win-b12110-cuda13.4', 'draft-mtp', 2048, 512, 'q8_0')]:
             p = core.load(name)
             self.assertEqual((p['runtime'], p['spec'], p['batch'], p['ubatch'], p['cache_k']),
                              (runtime, spec, batch, ubatch, kv))
             args = core.command(p)
             self.assertIn('131072', args)
-            self.assertEqual('-md' in args, name == 'qwen36')
-            self.assertEqual('--fit' in args, name == 'qwen36')
+            self.assertEqual('-md' in args, False)
+            self.assertEqual('--fit' in args, False)
 
     def test_prompt_ram_cache_limits(self):
         for name in core.PROFILES:
@@ -143,7 +141,7 @@ class CoreTests(unittest.TestCase):
         args = core.command(p)
         projector = core.artifact_root(p) / 'models' / p['mmproj']
         self.assertEqual(args[args.index('--mmproj') + 1], core.model_arg(p, p['mmproj']))
-        for name in ('qwen36', 'bonsai2', 'bonsai2mtp'):
+        for name in ('bolt35',):
             self.assertNotIn('--mmproj', core.command(core.load(name)))
         with patch('lib.swap.guard'), patch('lib.core.os.access', return_value=True), \
                 patch.object(Path, 'is_file', autospec=True,
@@ -168,9 +166,6 @@ class CoreTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'LLAMA_WINDOWS_ROOT'):
                     core.windows_root()
         self.assertEqual(core.load('bolt35')['platform'], 'windows')
-        bonsai = core.load('bonsai2')
-        self.assertEqual(bonsai['platform'], 'linux')
-        self.assertEqual(core.command(bonsai)[0], str(core.ROOT / 'runtimes' / bonsai['runtime'] / 'llama-server'))
         with patch('lib.core.json.loads', return_value={**core.json.loads(
                 (core.ROOT / 'profiles' / 'bolt35.json').read_text()), 'platform': 'macos'}):
             with self.assertRaisesRegex(ValueError, 'platform'):
@@ -255,10 +250,6 @@ class CoreTests(unittest.TestCase):
             core.stop(p)
         run.assert_called_once()
         self.assertEqual(running.call_count, 2)
-        with patch('lib.swap.guard'), patch('lib.core.subprocess.run'), \
-                patch.object(core, 'windows_server_running') as running:
-            core.stop(core.load('bonsai2'))
-        running.assert_not_called()
 
     def test_linux_port_wait(self):
         with socket.socket() as sock:
@@ -308,38 +299,7 @@ class CoreTests(unittest.TestCase):
             if p.get('mmproj'):
                 self.assertIn(p['mmproj'], files)
 
-    def test_bonsai_sampling_and_no_speculation(self):
-        p = core.load('bonsai2')
-        args = core.command(p)
-        for flag, value in {'--spec-type': 'none', '--temp': '1.0', '--top-p': '0.95',
-                            '--top-k': '20', '--min-p': '0.0', '--presence-penalty': '1.0',
-                            '--repeat-penalty': '1.0', '--repeat-last-n': '64',
-                            '-c': '131072', '--cache-type-k': 'f16', '--cache-type-v': 'f16'}.items():
-            self.assertEqual(args[args.index(flag) + 1], value)
-        self.assertNotIn('-md', args)
-        self.assertNotIn('--spec-draft-n-max', args)
-        for spec in ('draft-mtp', 'draft-dflash'):
-            with self.assertRaises(ValueError):
-                core.load('bonsai2', {'spec': spec})
-        with patch.dict('os.environ', {'BONSAI_CONTEXT': '16384', 'QWEN_CONTEXT': '65536'}):
-            self.assertEqual(core.load('bonsai2')['context'], 16384)
 
-    def test_bonsai_mtp_embedded_head_and_disable(self):
-        p = core.load('bonsai2mtp')
-        args = core.command(p)
-        self.assertIn('prism-b10777-e3de715-cuda12.8', args[0])
-        for flag, value in {'--spec-type': 'draft-mtp', '--spec-draft-n-max': '2',
-                            '--spec-draft-n-min': '0', '--spec-draft-p-min': '0.0',
-                            '-c': '131072'}.items():
-            self.assertEqual(args[args.index(flag) + 1], value)
-        self.assertNotIn('-md', args)
-        args = core.command(core.load('bonsai2mtp', {'spec': 'none'}))
-        for flag in ('--spec-draft-n-max', '--spec-draft-n-min', '--spec-draft-p-min'):
-            self.assertNotIn(flag, args)
-        with self.assertRaises(ValueError):
-            core.load('bonsai2mtp', {'spec': 'draft-dflash'})
-        with patch.dict('os.environ', {'BONSAI_MTP_CONTEXT': '32768', 'BONSAI_CONTEXT': '16384'}):
-            self.assertEqual(core.load('bonsai2mtp')['context'], 32768)
 
 
 if __name__ == '__main__':

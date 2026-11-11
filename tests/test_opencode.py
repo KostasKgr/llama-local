@@ -10,7 +10,7 @@ from lib import core, jsonc, opencode
 
 class OpenCodeTests(unittest.TestCase):
     def setUp(self):
-        self.profile = core.load('qwen36')
+        self.profile = core.load('bolt35')
 
     def test_comments_trailing_commas_and_unrelated_bytes(self):
         source = '''{
@@ -41,44 +41,22 @@ class OpenCodeTests(unittest.TestCase):
         source = opencode.merge('{}', self.profile)
         path = ['providers', 'llama.cpp', 'models', self.profile['alias']]
         source = jsonc.set_value(source, path + ['limit', 'context'], 32000)
-        source = jsonc.set_value(source, path + ['variants'], [{'id': 'custom', 'settings': {'temperature': 0.2}}])
+        source = jsonc.set_value(source, path + ['custom'], {'temperature': 0.2})
         with self.assertRaisesRegex(ValueError, '--update'):
             opencode.merge(source, self.profile)
         updated = opencode.merge(source, self.profile, update=True)
         model = jsonc.parse(updated).value['providers']['llama.cpp']['models'][self.profile['alias']]
-        self.assertEqual(model['limit']['context'], 131072)
-        self.assertEqual(model['variants'], [{'id': 'custom', 'settings': {'temperature': 0.2}}])
+        self.assertEqual(model['limit']['context'], 65536)
+        self.assertEqual(model['custom'], {'temperature': 0.2})
 
-    def test_bonsai_registration_preserves_other_profiles(self):
-        source = opencode.merge('{}', self.profile)
-        before = jsonc.parse(source).value['providers']['llama.cpp']
-        p = core.load('bonsai2')
-        result = opencode.merge(source, p)
-        provider = jsonc.parse(result).value['providers']['llama.cpp']
-        self.assertEqual(provider['settings'], before['settings'])
-        self.assertEqual(provider['models'][self.profile['alias']], before['models'][self.profile['alias']])
-        model = provider['models'][p['alias']]
-        self.assertEqual(model['limit'], {'context': 131072, 'output': 8192})
-        self.assertEqual(model['capabilities'], {'tools': True, 'input': ['text'], 'output': ['text']})
-        self.assertEqual(model['variants'], [])
-        self.assertEqual(opencode.merge(result, p), result)
 
     def test_swift_default_output_limit(self):
         self.assertEqual(opencode.model_config(core.load('swift15'))['limit']['output'], 16000)
 
-    def test_bonsai_mtp_keeps_upstream_entry(self):
-        upstream = core.load('bonsai2')
-        source = opencode.merge('{}', upstream)
-        p = core.load('bonsai2mtp')
-        result = opencode.merge(source, p)
-        models = jsonc.parse(result).value['providers']['llama.cpp']['models']
-        self.assertEqual(models[upstream['alias']], opencode.model_config(upstream))
-        self.assertEqual(models[p['alias']]['limit'], {'context': 131072, 'output': 8192})
-        self.assertEqual(models[p['alias']]['variants'], [])
 
     def test_bolt_registration_preserves_existing_models(self):
         source = '{}'
-        for name in ('swift15', 'qwen36', 'bonsai2', 'bonsai2mtp'):
+        for name in ('swift15',):
             source = opencode.merge(source, core.load(name))
         before = jsonc.parse(source).value['providers']['llama.cpp']['models']
         p = core.load('bolt35')
@@ -100,8 +78,8 @@ class OpenCodeTests(unittest.TestCase):
         self.assertEqual({v['id'] for v in model['variants']}, {'none', 'low', 'medium', 'xhigh'})
         self.assertEqual(model['limit'], {'context': 65536, 'output': 4096})
         self.assertEqual(model['capabilities']['input'], ['text', 'image'])
-        with patch.dict(os.environ, {'QWEN_CONTEXT': '32768', 'QWEN_PORT': '5555'}):
-            p = core.load('qwen36', {'port': 1235})
+        with patch.dict(os.environ, {'BOLT35_CONTEXT': '32768', 'BOLT35_PORT': '5555'}):
+            p = core.load('bolt35', {'port': 1235})
             result = opencode.merge('{}', p)
             provider = jsonc.parse(result).value['providers']['llama.cpp']
             self.assertEqual(provider['settings']['baseURL'], 'http://127.0.0.1:1235/v1')
@@ -126,7 +104,7 @@ class OpenCodeTests(unittest.TestCase):
 
     def test_shared_endpoint_conflict(self):
         source = opencode.merge('{}', self.profile)
-        p = core.load('qwen36', {'port': 4321})
+        p = core.load('bolt35', {'port': 4321})
         with self.assertRaisesRegex(ValueError, 'baseURL'):
             opencode.merge(source, p)
         updated = opencode.merge(source, p, update=True)
@@ -160,16 +138,16 @@ class OpenCodeTests(unittest.TestCase):
             source = b'{"custom":true}\n'
             path.write_bytes(source)
             path.chmod(0o640)
-            opencode.add('qwen36', path, dry_run=True)
+            opencode.add('bolt35', path, dry_run=True)
             self.assertEqual(path.read_bytes(), source)
             self.assertEqual(list(path.parent.glob('*.backup-*')), [])
-            opencode.add('qwen36', path)
+            opencode.add('bolt35', path)
             backups = list(path.parent.glob('*.backup-*'))
             self.assertEqual(len(backups), 1)
             self.assertEqual(backups[0].read_bytes(), source)
             self.assertEqual(path.stat().st_mode & 0o777, 0o640)
             updated = path.read_bytes()
-            opencode.add('qwen36', path)
+            opencode.add('bolt35', path)
             self.assertEqual(path.read_bytes(), updated)
             self.assertEqual(list(path.parent.glob('*.backup-*')), backups)
 
@@ -189,9 +167,9 @@ class OpenCodeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, redirect_stdout(io.StringIO()), \
                 patch('lib.core.load_env_file', return_value={}):
             path = Path(temp) / 'nested/config.jsonc'
-            opencode.add('qwen36', path, dry_run=True)
+            opencode.add('bolt35', path, dry_run=True)
             self.assertFalse(path.parent.exists())
-            opencode.add('qwen36', path)
+            opencode.add('bolt35', path)
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         for output in [0, -1, 131073]:
             with self.assertRaises(ValueError):
@@ -200,7 +178,7 @@ class OpenCodeTests(unittest.TestCase):
 
 class OpenCodeEnvBaseUrlTests(unittest.TestCase):
     def test_resolve_base_url_with_opencode_key(self):
-        profile = core.load('qwen36')
+        profile = core.load('bolt35')
         self.assertEqual(core.resolve_base_url(profile, opencode.ENV_KEY, {}),
                          'http://127.0.0.1:1235/v1')
         self.assertEqual(core.resolve_base_url(profile, opencode.ENV_KEY,
@@ -211,7 +189,7 @@ class OpenCodeEnvBaseUrlTests(unittest.TestCase):
                 core.resolve_base_url(profile, opencode.ENV_KEY, {'LLAMA_OPENCODE_BASE_URL': bad})
 
     def test_merge_with_configured_base_url(self):
-        profile = core.load('qwen36')
+        profile = core.load('bolt35')
         base = core.resolve_base_url(profile, opencode.ENV_KEY,
                                      {'LLAMA_OPENCODE_BASE_URL': 'https://models.example/v1'})
         result = opencode.merge('{}', profile, base_url=base)
@@ -230,11 +208,11 @@ class OpenCodeEnvBaseUrlTests(unittest.TestCase):
             path = Path(temp) / 'opencode.jsonc'
             with patch('lib.core.load_env_file',
                        return_value={'LLAMA_OPENCODE_BASE_URL': 'https://env.example/v1'}):
-                opencode.add('qwen36', path)
+                opencode.add('bolt35', path)
             config = jsonc.parse(path.read_text()).value
             self.assertEqual(config['providers']['llama.cpp']['settings']['baseURL'],
                              'https://env.example/v1')
             # Without the configured URL, the local default conflicts with it.
             with patch('lib.core.load_env_file', return_value={}):
                 with self.assertRaisesRegex(ValueError, 'baseURL'):
-                    opencode.add('qwen36', path)
+                    opencode.add('bolt35', path)

@@ -36,6 +36,76 @@ class StrataTests(unittest.TestCase):
         self.assertEqual(cfg['args'][cfg['args'].index('--spec') + 1], '2')
         self.assertEqual(cfg['args'][cfg['args'].index('--lookup-max-t') + 1], '0')
 
+    def test_trial_pack_override_stays_in_managed_packs(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(strata, 'root', return_value=Path(temp)):
+            cfg = strata.config(core.load('gyros'), Path(temp))
+            self.assertTrue(cfg['args'][cfg['args'].index('--pack') + 1].endswith('packs\\gyros'))
+            cfg = strata.config(core.load('gyros', {'pack': 'gyros-xbin'}), Path(temp))
+            self.assertTrue(cfg['args'][cfg['args'].index('--pack') + 1].endswith('packs\\gyros-xbin'))
+            self.assertTrue(cfg['tokenizer'].endswith('packs\\gyros-xbin\\tokenizer'))
+        for value in ('../gyros', 'other', 'gyros/../x', 'GYROS', 'gyros-'):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                core.load('gyros', {'pack': value})
+        with self.assertRaises(ValueError):
+            core.load('swift15', {'pack': 'gyros'})
+
+    def test_start_refuses_a_pack_without_experts_bin(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(strata, 'root', return_value=Path(temp)):
+            p = core.load('gyros')
+            for path in (strata.python(), strata.engine(), Path(temp) / 'installation.json',
+                         strata.pack(p) / 'native_experts.txt', strata.pack(p) / 'tokenizer/vocab.json',
+                         Path(temp) / 'models' / p['model']):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('x')
+            with self.assertRaisesRegex(ValueError, 'experts.bin'):
+                strata.preflight(p)
+
+    def test_start_checks_experts_bin_size_without_hashing_it(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(strata, 'root', return_value=Path(temp)):
+            p = core.load('gyros', {'spec': 'none'})
+            for path in (strata.python(), strata.engine(), strata.pack(p) / 'native_experts.txt',
+                         strata.pack(p) / 'tokenizer/vocab.json', Path(temp) / 'models' / p['model']):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('x')
+            (strata.pack(p) / 'experts.bin').write_bytes(b'1234')
+            installation = {'manifest_sha256': 'm', 'model_manifest': core.manifest('models')['gyros'],
+                            'generated': {'packs/gyros/experts.bin': {'size': 4, 'sha256': 'never'},
+                                          'packs/gyros/index.txt': {'size': 1, 'sha256': 'h'}}}
+            (Path(temp) / 'installation.json').write_text(json.dumps(installation))
+            checked = []
+            with patch.object(strata, 'verify_file', lambda path, artifact: checked.append(Path(path).name)), \
+                    patch.object(strata, 'digest', return_value='m'), patch.object(strata, 'state') as state:
+                state.return_value.exists.return_value = False
+                with self.assertRaisesRegex(ValueError, 'Full Gyro GGUF size mismatch'):
+                    strata.preflight(p)
+                self.assertEqual(checked, ['engine-component.json', 'index.txt'])
+                installation['generated']['packs/gyros/experts.bin']['size'] = 5
+                (Path(temp) / 'installation.json').write_text(json.dumps(installation))
+                with self.assertRaisesRegex(ValueError, 'experts.bin size mismatch'):
+                    strata.preflight(p)
+
+    def test_load_summary_reports_engine_phases_and_disk(self):
+        with tempfile.TemporaryDirectory() as temp:
+            run = Path(temp)
+            (run / 'engine.log').write_text(
+                'strata generate: memory guard: limit 31.4 GiB (source: meminfo), current 14.7 GiB, reclaimable cache '
+                'credited 0.0 GiB; available 16.7 GiB (MemAvailable 16.7 GiB), floor 2560 MiB\n'
+                'strata generate: 496 native projection matrices, 2573.44 MiB of weights, in 4.4 s\n'
+                'strata generate: pre-filled 14681 of 14681 slots from the profile in 56.4 s (273 MB/s); slot 0 verified\n'
+                'FileExpertSource: mapped pinned cache complement ready: resident 5.38 GiB, pinned 5.38 GiB in 6 s; '
+                'page-locked and mapped\n')
+            (run / 'disk.csv').write_text('time,read_mib_s,reads_s,read_ms,read_queue,page_reads_s\n'
+                                          '99,900,1,1,1,1\n100,100,10,0.5,1,5\n101,300,30,1.5,2,9\n')
+            summary = strata_windows.load_summary(run, 100, 80)
+        self.assertEqual(summary['phases']['gpu_fill'], {'slots': 14681, 's': 56.4, 'mb_s': 273})
+        self.assertEqual(summary['phases']['available_ram_gib'], 16.7)
+        self.assertEqual(summary['unaccounted_s'], 13.2)
+        self.assertEqual(summary['disk'], {'samples': 2, 'read_gib': 0.39, 'read_mib_s_mean': 200.0,
+                                           'read_mib_s_max': 300.0, 'read_ms_max': 1.5})
+        with tempfile.TemporaryDirectory() as temp:
+            self.assertEqual(strata_windows.load_summary(Path(temp), 0, 5),
+                             {'load_s': 5, 'phases': {}, 'unaccounted_s': 5})
+
     def test_storage_does_not_discover_other_installations(self):
         for value in (r'C:\AI\strata', r'c:\AI\STRATA\data', r'\\host\share\data',
                       r'C:\AI\..\strata', 'C:\\', "C:\\a\\b'c"):

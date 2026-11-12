@@ -88,6 +88,12 @@ class WindowsOwnershipTests(unittest.TestCase):
                     self.assertTrue((run / 'power.csv').is_file())
                     # These counters are optional across Windows hosts, but a script error is never a sample.
                     self.assertNotIn('op_Division', (run / 'power.csv').read_text())
+                    disk = (run / 'disk.csv').read_text().splitlines()
+                    self.assertEqual(disk[0], 'time,read_mib_s,reads_s,read_ms,read_queue,page_reads_s')
+                    self.assertGreater(len(disk), 1)
+                    self.assertEqual(len(disk[1].split(',')), 6)
+                    load = json.loads((run / 'load.json').read_text())
+                    self.assertGreater(load['load_s'], 0)
         finally:
             strata.atomic(run / 'stop.json', {'token': token})
             if process is not None and process.poll() is None:

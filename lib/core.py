@@ -30,7 +30,7 @@ def boolean(value):
 
 
 FIELDS = {'kv_unified': boolean, 'parallel': int, 'ctx_checkpoints': int, 'context': int, 'batch': int, 'ubatch': int, 'draft_max': int, 'port': int,
-          'cache_k': str, 'cache_v': str, 'load_mode': str, 'spec': str}
+          'cache_k': str, 'cache_v': str, 'load_mode': str, 'spec': str, 'pack': str}
 
 
 def load(name, overrides=None, *, scope=None):
@@ -51,6 +51,8 @@ def load(name, overrides=None, *, scope=None):
         from . import strata
         strata.validate(p)
         return p
+    if 'pack' in p:
+        raise ValueError('pack is a Strata-only setting')
     p.setdefault('parallel', 1)
     p.setdefault('kv_unified', False)
     p.setdefault('ctx_checkpoints', 2)

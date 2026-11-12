@@ -21,7 +21,7 @@ import zipfile
 from . import core
 
 DEFAULT_ROOT = r'C:\AI\llama-local\strata'
-OVERRIDES = {'context', 'port', 'spec', 'draft_max', 'parallel'}
+OVERRIDES = {'context', 'port', 'spec', 'draft_max', 'parallel', 'pack'}
 
 
 def validate(p):
@@ -37,6 +37,8 @@ def validate(p):
         raise ValueError('Strata requires 1024..131072 context, one slot and a valid port')
     if p['spec'] not in ('none', 'dflash2') or type(p['draft_max']) is not int or not 2 <= p['draft_max'] <= 6:
         raise ValueError('Strata supports none/dflash2 and draft maximum 2..6')
+    if not re.fullmatch(r'gyros(-[a-z0-9]+)*', p.get('pack', 'gyros')):
+        raise ValueError('Strata pack must be a managed packs/gyros[-name] folder')
 
 
 def windows_root():
@@ -307,6 +309,15 @@ def install():
             finally:
                 if staging.exists():
                     shutil.rmtree(staging)
+        if not (pack / 'experts.bin').is_file():
+            # The experts as one file: on Windows only an experts.bin pack fills the GPU cache and RAM copy with
+            # unbuffered parallel reads (Strata's own low-RAM setup writes it). The GGUF in place loaded in ~80 s
+            # against ~22 s (docs/strata.md). Rewriting an existing pack leaves its other files byte-identical.
+            print('Writing experts.bin (about 24 GiB, one time)', flush=True)
+            run_tool('iq_pack.py', '--gguf', win(base / 'models' / core.load('gyros')['model']),
+                     '--out', win(pack), '--experts-bin', '--compat-bf16')
+            if not (pack / 'experts.bin.src.json').is_file():
+                raise ValueError('Incomplete Gyro preparation: experts.bin')
         drafter = base / 'dflash2'
         drafter.mkdir(exist_ok=True)
         stock, selected = pins()['generated_drafters']
@@ -362,10 +373,15 @@ def verify_gguf_py():
             raise ValueError('gguf-py integrity mismatch: ' + entry['file'])
 
 
+def pack(p):
+    # Trial packs (`--pack gyros-NAME`) sit beside the installed one and are never inventoried by install/verify.
+    return root() / 'packs' / p.get('pack', 'gyros')
+
+
 def config(p, run_dir):
     base = root()
     model = win(base / 'models' / p['model'])
-    args = ['--pack', win(base / 'packs/gyros'), '--native', model, '--ple-gguf', model,
+    args = ['--pack', win(pack(p)), '--native', model, '--ple-gguf', model,
             '--expert-profile', win(control() / 'data/expert-profile.bin'), '--expert-cache', 'auto',
             '--prefill', 'auto', '--max-context', str(p['context']), '--kv', 'int8',
             '--resident-experts', '--ram-keep-gib', str(p['ram_keep_gib']), '--ple-io', 'direct',
@@ -378,7 +394,7 @@ def config(p, run_dir):
         # Native IQ packs require a >=2-row verify buffer even without a drafter.
         args += ['--spec', '2', '--suffix-draft', '0', '--lookup-max-t', '0']
     return {'exe': win(engine()), 'args': args, 'cwd': win(control()),
-            'lib_dirs': [win(engine().parent)], 'tokenizer': win(base / 'packs/gyros/tokenizer'),
+            'lib_dirs': [win(engine().parent)], 'tokenizer': win(pack(p) / 'tokenizer'),
             'model_name': p['alias'], 'host': '127.0.0.1', 'port': p['port'],
             'log': win(run_dir / 'engine.log'), 'parallel': 1, 'engine_ready_s': 900,
             'drafting': 'dflash2' if p['spec'] == 'dflash2' else 'off',
@@ -431,8 +447,8 @@ def port_open(port):
 
 
 def preflight(p):
-    for path in (python(), engine(), root() / 'installation.json', root() / 'packs/gyros/native_experts.txt',
-                 root() / 'packs/gyros/tokenizer/vocab.json', root() / 'models' / p['model']):
+    for path in (python(), engine(), root() / 'installation.json', pack(p) / 'native_experts.txt',
+                 pack(p) / 'tokenizer/vocab.json', pack(p) / 'experts.bin', root() / 'models' / p['model']):
         if not path.is_file():
             raise ValueError('Strata artifact missing; run llama.py install gyros: ' + str(path))
     if p['spec'] == 'dflash2':
@@ -446,6 +462,11 @@ def preflight(p):
     if installation['model_manifest'] != core.manifest('models')['gyros']:
         raise ValueError('Strata model pins changed; run install gyros')
     for name, artifact in installation['generated'].items():
+        if name.endswith('/experts.bin'):
+            # Hashing 24 GiB took ~21 s per start; `verify gyros` still hashes it, the engine checks its sidecar.
+            if generated_path(name).stat().st_size != artifact['size']:
+                raise ValueError('Gyro experts.bin size mismatch; run verify gyros')
+            continue
         verify_file(generated_path(name), artifact)
     if (root() / 'models' / p['model']).stat().st_size != core.manifest('models')['gyros'][0]['size']:
         raise ValueError('Full Gyro GGUF size mismatch; run verify gyros')
@@ -520,7 +541,8 @@ def supervise(p):
         atomic(run / 'stop.json', {'token': token})
         if process is not None:
             process.wait(timeout=45)
-        for name in ('server.log', 'engine.log', 'owner.json', 'config.json', 'gpu.csv', 'host.csv', 'power.csv'):
+        for name in ('server.log', 'engine.log', 'owner.json', 'config.json', 'load.json',
+                     'gpu.csv', 'host.csv', 'power.csv', 'disk.csv'):
             if (run / name).is_file():
                 shutil.copyfile(run / name, out / name)
         for sig, handler in previous.items():

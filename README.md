@@ -7,7 +7,11 @@ No source build, CUDA toolkit installation, or driver changes are required.
 The optional [Strata Gyro-S backend](docs/strata.md) has its own pinned Windows
 runtime, full GGUF and managed storage. It supports text and tools, with explicit
 opt-in to the exclusive llama-swap group. The [Gyro-S baseline](reports/gyros/baseline.md)
-records API measurements and real T3 tool-use results.
+compares load and real T3 tool-use speed with the superseded
+[GGUF-in-place baseline](reports/gyros/GGUF_IN_PLACE_BASELINE.md). Its pack must include
+`experts.bin` (`iq_pack.py --experts-bin`, written by `install gyros`): loading
+fell from about 80 s to 22 s with it, and a cold request through llama-swap from
+about 82 s to 31 s (2026-11-12, [details](docs/strata.md)).
 
 Requirements: Python 3.12+, curl, working NVIDIA GPU passthrough, systemd user
 manager and cgroup v2. Tested on an RTX 5090 Laptop GPU with 24 GB VRAM.

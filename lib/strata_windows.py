@@ -8,6 +8,7 @@ import hmac
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import shutil
 import socket
@@ -168,7 +169,21 @@ def start_telemetry(run_dir, api_pid):
                        "$p=($c|Where-Object {$_.Path -match 'pkg\\)\\\\power$'}).CookedValue;"
                        "$q=($c|Where-Object {$_.Path -match 'pp0\\)\\\\power$'}).CookedValue;"
                        "@(([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()/1000),"
-                       "$(if($null -ne $p){$p/1000}),$(if($null -ne $q){$q/1000})) -join ','}"])]
+                       "$(if($null -ne $p){$p/1000}),$(if($null -ne $q){$q/1000})) -join ','}"]),
+        # System-wide: the GPU-cache fill reads the mapped GGUF through page faults, not process file I/O.
+        ('disk.csv', [str(Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'),
+                      '-NoProfile', '-NonInteractive', '-Command',
+                      "$ErrorActionPreference='SilentlyContinue';"
+                      "'time,read_mib_s,reads_s,read_ms,read_queue,page_reads_s';"
+                      "$n='\\PhysicalDisk(_Total)\\';"
+                      "Get-Counter ($n+'Disk Read Bytes/sec'),($n+'Disk Reads/sec'),($n+'Avg. Disk sec/Read'),"
+                      "($n+'Avg. Disk Read Queue Length'),'\\Memory\\Page Reads/sec' -SampleInterval 1 -Continuous"
+                      " | ForEach-Object {$c=$_.CounterSamples;"
+                      "$v={param($m) ($c|Where-Object {$_.Path -like ('*'+$m)}).CookedValue};"
+                      "$b=& $v 'disk read bytes/sec';$l=& $v 'avg. disk sec/read';"
+                      "@(([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()/1000),"
+                      "$(if($null -ne $b){$b/1048576}),(& $v 'disk reads/sec'),$(if($null -ne $l){$l*1000}),"
+                      "(& $v 'avg. disk read queue length'),(& $v 'memory\\page reads/sec')) -join ','}"])]
     for name, command in commands:
         stream = (run_dir / name).open('wb')
         streams.append(stream)
@@ -232,6 +247,46 @@ def start_telemetry(run_dir, api_pid):
         for stream in streams:
             stream.close()
     return finish
+
+
+# Startup phases the engine reports with their own durations; the load summary keeps the rest as unaccounted time.
+PHASES = {
+    'available_ram_gib': (r'memory guard: .*?; available ([\d.]+) GiB', None),
+    'dense_weights': (r'native projection matrices, [\d.]+ MiB of weights, in ([\d.]+) s', 's'),
+    'gpu_fill': (r'pre-filled (\d+) of \d+ slots from the profile in ([\d.]+) s \((\d+) MB/s\)', 'slots s mb_s'),
+    'ram_complement': (r'pinned cache complement ready: resident ([\d.]+) GiB, .*? in ([\d.]+) s', 'gib s'),
+}
+
+
+def load_summary(run_dir, started_at, load_s):
+    """Engine phase timings and disk reads between owner start and readiness, from existing logs."""
+    try:
+        log = (run_dir / 'engine.log').read_text(encoding='utf-8', errors='replace')
+    except OSError:
+        log = ''
+    phases, accounted = {}, 0.0
+    for name, (pattern, fields) in PHASES.items():
+        match = re.search(pattern, log)
+        if not match:
+            continue
+        values = [float(v) for v in match.groups()]
+        phases[name] = values[0] if fields in (None, 's') else dict(zip(fields.split(), values))
+        if fields:
+            accounted += values[0] if fields == 's' else phases[name]['s']
+    summary = {'load_s': round(load_s, 2), 'phases': phases, 'unaccounted_s': round(load_s - accounted, 2)}
+    try:
+        with (run_dir / 'disk.csv').open(encoding='utf-8') as stream:
+            rows = [r for r in csv.DictReader(stream)
+                    if r.get('time') and started_at <= float(r['time']) and r.get('read_mib_s')]
+    except (OSError, ValueError):
+        rows = []
+    if rows:
+        rates = [float(r['read_mib_s']) for r in rows]
+        latency = [float(r['read_ms']) for r in rows if r.get('read_ms')]
+        summary['disk'] = {'samples': len(rows), 'read_gib': round(sum(rates) / 1024, 2),
+                           'read_mib_s_mean': round(sum(rates) / len(rates), 1), 'read_mib_s_max': round(max(rates), 1),
+                           'read_ms_max': round(max(latency), 3) if latency else None}
+    return summary
 
 
 def serve(root, run_dir):
@@ -306,6 +361,7 @@ def serve(root, run_dir):
                         record.update(state='ready', ready=ready, load_s=time.monotonic() - started,
                                       children=[identity(p.pid) for p in psutil.Process().children(recursive=True)])
                         write(run_dir / 'owner.json', record)
+                        write(run_dir / 'load.json', load_summary(run_dir, record['started_at'], record['load_s']))
                         print(json.dumps({'event': 'ready', **record}), flush=True)
                 time.sleep(0.25)
             if process.poll() is not None:

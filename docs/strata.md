@@ -26,6 +26,14 @@ model download. It verifies downloads before promotion and prepares the native
 model pack and stock DFlash2 drafter with the bundled Windows interpreter.
 No compiler, system Python installation, driver change or CUDA toolkit is needed.
 
+The pack must include `experts.bin`: install runs the bundled
+`tools/iq_pack.py` with **`--experts-bin`** (and `--compat-bf16`), which copies
+every expert out of the GGUF into one 24 GiB file. It takes about 5 minutes and
+needs that much extra space. An installation made before 2026-11-12 adds it on the
+next `install gyros`; start refuses a pack without it. Keep passing this flag in
+any manual or future preparation. Without it the engine reads experts from the
+GGUF in place and loads about 3.5 times slower (see "Loading and expert placement").
+
 `LLAMA_STRATA_WINDOWS_ROOT` in the ignored `.env` selects a dedicated local Windows
 directory. Its default is `C:\AI\llama-local\strata`; it is independent of
 `LLAMA_WINDOWS_ROOT`. Keep it on a fast local SSD: the full GGUF contains the PLE
@@ -36,6 +44,9 @@ preparation.
 pinned archives, gguf-py source identities, and prepared outputs. Generated native
 pack hashes are local provenance; the drafter additionally has upstream expected
 output hashes. Starting a profile never downloads or prepares missing files.
+Start re-hashes the prepared outputs except `experts.bin`, whose size it checks:
+hashing its 24 GiB added about 21 s to every load. Run `verify gyros` after any
+doubt about the managed storage.
 
 Installation is resumable. A corrupted installed runtime or prepared output is
 refused instead of being accepted as a new baseline. For changed preparation pins,
@@ -67,6 +78,59 @@ Equivalent `GYROS_*` environment variables follow the normal CLI-over-environmen
 precedence. llama.cpp cache, batch and loading flags are refused for Strata.
 Without a drafter, the native IQ path still uses its minimum verification buffer;
 prompt-lookup drafting is disabled as well.
+
+## Loading and expert placement
+
+Gyro-S has 48 layers of 512 experts. The engine places them by the ranking in
+the Control bundle's `data/expert-profile.bin`, which lists every (layer, expert)
+pair most-used first. It ships with Strata and is not built from local use.
+
+- **VRAM:** `--expert-cache auto` sizes the GPU cache from free VRAM after the
+  profile's reserve and the drafter (14,681 slots, 14.35 GiB here), then copies
+  the top-ranked pairs into it in rank order.
+- **RAM:** `--resident-experts` continues down the same ranking, skipping pairs
+  already on the GPU, into page-locked RAM. Its budget is available Windows
+  commit at that point minus `ram_keep_gib`, so less free RAM at start means a
+  smaller RAM copy (5.4–13 GiB observed).
+- **Files:** every other expert is read from the GGUF when a token routes to it.
+- **While serving:** an adaptive tier swaps experts between VRAM and RAM
+  according to actual routing. Nothing is kept across restarts unless the
+  engine's `--expert-profile-save` is used, which the profile does not set.
+
+Where the experts come from decides the load time. With `experts.bin`, the
+engine closes its file mapping and fills the GPU cache and the RAM copy with
+unbuffered parallel reads (engine log: "the GPU cache's fill and the RAM copy
+read unbuffered"). With the GGUF in place, that path is unavailable on Windows
+("read through the mapping (experts.bin only)", `begin_startup_unbuffered` in
+`src/core/expert_source.cpp`): the fill copies one expert at a time through the
+mapping, with under one read in flight.
+
+Measured 2026-11-12, alternating sequential starts, GPU free, a 28-token and a
+22,180-token prompt with reasoning off:
+
+| Pack | Load | GPU-cache fill | RAM copy | 22K prefill | Decode (short / after 22K) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| GGUF in place | 79.3 / 80.6 s | 50.6 / 51.5 s, 0.3 GB/s | 14 / 15 s | 950 / 953 tok/s | 75 / 78, 88 / 89 tok/s |
+| `experts.bin` | 22.4 / 22.1 s | 4.1 / 4.0 s, 3.8 GB/s | 5 / 5 s | 2,795 / 2,807 tok/s | 102 / 86, 124 / 105 tok/s |
+
+A cold first request through llama-swap (launcher checks, engine load, answer)
+took 30.7 s, against about 82 s before; about 8 s of it is the launcher's integrity
+checks and the owner's engine verification. Both placed 14,681 experts in VRAM and 12.99 GiB in RAM. Minimum available RAM
+and peak commit during load were unchanged; CPU package energy during load fell
+from about 1.8 to 0.55 kJ. Prefill and decode were not re-measured beyond these
+two prompts here. The [Gyro-S baseline](../reports/gyros/baseline.md) compares a
+real T3 agentic attempt with `experts.bin` by context range against the superseded
+[GGUF-in-place baseline](../reports/gyros/GGUF_IN_PLACE_BASELINE.md).
+
+The fill's look-ahead hint (`STRATA_FILL_AHEAD`, default 256) is unrelated: it
+depends on read-ahead, which the 0.1.59 engine disables on Windows
+(`read_ahead_enabled()` returns false in `src/platform/memory.cpp`), so the engine
+logs `0 pairs ahead` whatever value is set. Upstream issue #4064 reported the
+single-threaded fill on Linux; its fix (#4065) was not merged.
+
+`--pack gyros-NAME` (or `GYROS_PACK`) starts from a trial pack folder beside the
+installed one under the managed `packs/` directory. Install and verify do not
+inventory trial packs; copy the installed pack's files to make one.
 
 ## llama-swap and pi
 
@@ -148,7 +212,11 @@ The prompt limits extra research so the required full-file reads fit the context
 budget. Keep its recorded hash when comparing repeated attempts.
 
 Logs and telemetry stay under ignored `logs/gyros/` and the managed Windows run
-directory. The Windows owner contains its GPU/power collectors in its job. Timing
+directory. `disk.csv` samples system-wide disk reads, read latency, read queue
+length and hard page faults each second. At readiness the owner writes `load.json`:
+the engine's own phase durations (dense weights, GPU-cache fill, RAM complement),
+available RAM at start, time not covered by those phases, and disk reads during
+the load. The Windows owner contains its GPU/power collectors in its job. Timing
 summaries exclude cached input from prefill and keep engine-generated token counts
 separate from API output counts. Samples can miss peaks, and power counters do not
 measure whole-machine energy. Fresh-process loading does not imply a cold OS cache.

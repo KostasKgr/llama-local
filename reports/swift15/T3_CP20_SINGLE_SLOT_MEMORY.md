@@ -18,6 +18,7 @@ Swift now uses one 131072-token inference slot, unified KV disabled, twenty
 context checkpoints, minimum checkpoint spacing 8192 tokens and 16384 MiB RAM
 prompt cache. Runtime Windows b12110 CUDA 13.4, main q8_0 K/V, batch/ubatch
 2048/512, MTP depth 3, model and vision projector remain unchanged.
+The main model file measured 12,120,016,896 bytes (11.29 GiB).
 The profile, current README and default-setting test expectations were updated.
 `task agent:verify` passed all 89 tests; a sequential text/red/blue vision smoke
 passed with the new settings on owned trial port 1260 before benchmarking.
@@ -106,6 +107,11 @@ fresh, so its lifetime peak includes this test's model load and warm-up.
 Post-cap/interrupt tail samples are included in memory peaks. Cooling thresholds
 were consistent but post-warm-up temperatures differed, limiting performance
 comparisons.
+
+For the single-client run, busy-sample median / maximum GPU power was
+141.1 / 176.52 W, and median / maximum temperature was 69 / 73 °C. These samples
+cover the benchmark bracket, including its short post-cap tail; they are not
+whole-machine power measurements.
 
 ## Evidence, threads and restoration
 

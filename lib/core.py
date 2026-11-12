@@ -17,7 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # Windows server never loads multi-GB files through the WSL file share.
 WINDOWS_ROOT = r'C:\AI\llama-local'
 PROFILES = {'swift15': ('SWIFT', 'draft-mtp'),
-            'bolt35': ('BOLT35', 'draft-dflash')}
+            'bolt35': ('BOLT35', 'draft-dflash'),
+            'gyros': ('GYROS', 'dflash2')}
 def boolean(value):
     if isinstance(value, bool):
         return value
@@ -32,11 +33,11 @@ FIELDS = {'kv_unified': boolean, 'parallel': int, 'ctx_checkpoints': int, 'conte
           'cache_k': str, 'cache_v': str, 'load_mode': str, 'spec': str}
 
 
-def load(name, overrides=None):
+def load(name, overrides=None, *, scope=None):
     if name not in PROFILES:
         raise ValueError('Unknown profile')
     p = json.loads((ROOT / 'profiles' / f'{name}.json').read_text())
-    scope = os.environ.get('LLAMA_SCOPE', name)
+    scope = os.environ.get('LLAMA_SCOPE', name) if scope is None else scope
     if scope != name and not (scope.startswith(name + '-trial-') and all(c.isalnum() or c == '-' for c in scope)):
         raise ValueError('Invalid owned scope name')
     p['scope'] = scope
@@ -46,6 +47,10 @@ def load(name, overrides=None):
         if f'{prefix}_{env_key}' in os.environ:
             p[key] = cast(os.environ[f'{prefix}_{env_key}'])
     p.update({k: v for k, v in (overrides or {}).items() if v is not None})
+    if p.get('backend') == 'strata':
+        from . import strata
+        strata.validate(p)
+        return p
     p.setdefault('parallel', 1)
     p.setdefault('kv_unified', False)
     p.setdefault('ctx_checkpoints', 2)
@@ -99,16 +104,25 @@ def wsl_path(path):
 
 def artifact_root(p):
     """Where a profile's models, downloads and runtimes live, as a WSL path."""
+    if p.get('backend') == 'strata':
+        from . import strata
+        return strata.root()
     return wsl_path(windows_root()) if p.get('platform') == 'windows' else ROOT
 
 
 def server_path(p):
+    if p.get('backend') == 'strata':
+        from . import strata
+        return strata.engine()
     name = 'llama-server.exe' if p.get('platform') == 'windows' else 'llama-server'
     return artifact_root(p) / 'runtimes' / p['runtime'] / name
 
 
 def model_arg(p, relative):
     """Model path as the server process sees it."""
+    if p.get('backend') == 'strata':
+        from . import strata
+        return strata.win(strata.root() / 'models' / relative)
     if p.get('platform') == 'windows':
         return windows_root() + '\\models\\' + relative.replace('/', '\\')
     return str(ROOT / 'models' / relative)
@@ -125,6 +139,9 @@ def resolve_base_url(profile, env_key, env_values=None):
 
 
 def command(p):
+    if p.get('backend') == 'strata':
+        from . import strata
+        return strata.command(p)
     server = server_path(p)
     # Retain displaced prompt states; profiles can raise the default MiB limit.
     args = [str(server), '-m', model_arg(p, p['model']), '--load-mode', p['load_mode'],
@@ -166,6 +183,9 @@ def scope_active(p):
 def preflight(p):
     from . import swap
     swap.guard(p)
+    if p.get('backend') == 'strata':
+        from . import strata
+        return strata.preflight(p)
     args = command(p)
     if not os.access(args[0], os.X_OK):
         raise ValueError('Runtime missing; run install first')
@@ -230,6 +250,9 @@ def wait_port(port, free=None, timeout=150):
 
 
 def start(p):
+    if p.get('backend') == 'strata':
+        from . import strata
+        return strata.start(p)
     # llama-swap starts the next model when the last one's scope exits, while its Windows
     # server may still hold the shared port and VRAM. Manual starts still refuse at once.
     if os.environ.get('LLAMA_SWAP_MANAGED') == '1':
@@ -259,6 +282,9 @@ def windows_server_running(p, any_runtime=False):
     """Whether a server from this profile's runtime directory, or any runtime of this
     install, is still running; other llama-server.exe processes (for example other
     installs) are never matched."""
+    if p.get('backend') == 'strata':
+        from . import strata
+        return strata.running(p)
     runtime = windows_root() + '\\runtimes\\' + ('' if any_runtime else p['runtime'] + '\\')
     script = ("@(Get-Process llama-server -ErrorAction SilentlyContinue | Where-Object { $_.Path -and "
               f"$_.Path.StartsWith('{runtime}', [StringComparison]::OrdinalIgnoreCase) }}).Count")
@@ -268,6 +294,9 @@ def windows_server_running(p, any_runtime=False):
 def stop(p):
     from . import swap
     swap.guard(p)
+    if p.get('backend') == 'strata':
+        from . import strata
+        return strata.stop(p)
     subprocess.run(['systemctl', '--user', 'stop', p['scope'] + '.scope'], check=True, timeout=30)
     wait_windows_exit(p)
 
@@ -280,7 +309,7 @@ def wait_windows_exit(p, timeout=30, any_runtime=False):
     deadline = time.monotonic() + timeout
     while windows_server_running(p, any_runtime):
         if time.monotonic() > deadline:
-            raise ValueError('Windows llama-server still running after stop')
+            raise ValueError('Windows server still running after stop')
         time.sleep(0.5)
 
 
@@ -297,21 +326,25 @@ def verify(path, artifact):
         raise ValueError(f'SHA256 mismatch: {path}')
 
 
-def fetch(base, artifact):
+def fetch(base, artifact, *, verifier=None):
+    check = verifier or verify
     path = base / artifact['file']
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         part = path.with_name(path.name + '.part')
         subprocess.run(['curl', '-fL', '--retry', '3', '-C', '-', '-o', str(part), artifact['url']], check=True)
-        verify(part, artifact)
+        check(part, artifact)
         part.replace(path)
     else:
-        verify(path, artifact)
+        check(path, artifact)
     return path
 
 
 def install(name):
     p = load(name)
+    if p.get('backend') == 'strata':
+        from . import strata
+        return strata.install()
     root = artifact_root(p)
     for a in manifest('models')[name]:
         fetch(root / 'models', a)
@@ -369,6 +402,9 @@ def install_windows(p, archives, runtime):
 
 def snapshot(name):
     p = load(name)
+    if p.get('backend') == 'strata':
+        from . import strata
+        return strata.snapshot(p)
     server = server_path(p)
     return {'profile': p, 'command': command(p), 'model_artifacts': manifest('models')[name],
             'runtime_artifacts': manifest('runtimes')[p['runtime']],

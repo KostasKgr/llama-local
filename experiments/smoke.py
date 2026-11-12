@@ -20,6 +20,8 @@ signal.signal(signal.SIGTERM, interrupted)
 name = sys.argv[1]
 os.environ['LLAMA_SCOPE'] = name + '-trial-' + uuid.uuid4().hex
 p = core.load(name)
+if probes.gpu()[0] > 2048:
+    raise ValueError('GPU is occupied; leave its owner running and retry when free')
 core.preflight(p)
 out = core.ROOT / 'logs' / name / time.strftime('smoke-%Y%m%d-%H%M%S')
 out.mkdir(parents=True, exist_ok=False)
@@ -29,7 +31,7 @@ process = None
 try:
     with (out / 'server.log').open('w') as log:
         process = subprocess.Popen([sys.executable, str(core.ROOT / 'llama.py'), 'start', name], stdout=log, stderr=subprocess.STDOUT)
-    deadline = time.monotonic() + 300
+    deadline = time.monotonic() + (960 if name == 'gyros' else 300)
     while True:
         if process.poll() is not None:
             raise RuntimeError('Server exited during startup')
@@ -46,8 +48,12 @@ try:
     record['response'] = probes.request(base, '/v1/chat/completions', {
         'model': p['alias'], 'messages': [{'role': 'user', 'content': 'What is 2 + 2? Answer with the number only.'}],
         'max_tokens': 32, 'temperature': 0,
+        **({'reasoning_effort': 'none'} if name == 'gyros' else {}),
         'chat_template_kwargs': {'enable_thinking': False}})
     assert '4' in record['response']['choices'][0]['message']['content']
+    if name == 'gyros':
+        from experiments.strata_benchmark import validate_api
+        record['strata_api'] = validate_api(base, p['alias'])
     if p.get('mmproj'):
         # Generate two solid PNGs locally: no external image dependency or download.
         def chunk(kind, data):
@@ -76,7 +82,11 @@ try:
     record['stable'] = True
 finally:
     if process is not None:
-        probes.stop(p['scope'])
+        if name == 'gyros':
+            from lib import strata
+            strata.stop(p)
+        else:
+            probes.stop(p['scope'])
         try:
             process.wait(timeout=30)
         except subprocess.TimeoutExpired:

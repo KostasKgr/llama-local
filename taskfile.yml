@@ -10,6 +10,7 @@ tasks:
     deps:
       - compile
       - shell-syntax
+      - profile-config
     # Commands run after dependencies complete.
     cmds:
       - task: test
@@ -25,3 +26,9 @@ tasks:
   shell-syntax:
     cmds:
       - bash -n start_swift15_iq3s_128k.sh start_bolt35.sh
+
+  profile-config:
+    desc: Validate the Strata CLI and optional proxy configuration without starting processes.
+    cmds:
+      - python3 llama.py start gyros --dry-run > /dev/null
+      - python3 llama.py swap config --profiles bolt35 swift15 gyros > /dev/null

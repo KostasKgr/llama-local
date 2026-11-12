@@ -120,7 +120,7 @@ class CoreTests(unittest.TestCase):
             self.assertEqual('--fit' in args, False)
 
     def test_prompt_ram_cache_limits(self):
-        for name in core.PROFILES:
+        for name in ('swift15', 'bolt35'):
             with self.subTest(profile=name):
                 args = core.command(core.load(name))
                 self.assertEqual(args[args.index('--cache-ram') + 1],

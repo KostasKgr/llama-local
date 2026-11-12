@@ -62,12 +62,13 @@ def solid_png(rgb):
             + chunk(b'IDAT', zlib.compress((b'\x00' + rgb * 128) * 128)) + chunk(b'IEND', b''))
 
 
-def run(name, port=None, context=None, timeout=180):
+def run(name, port=None, context=None, timeout=180, base_url=None, health_url=None):
     profile = core.load(name, {'port': port, 'context': context})
-    base = f'http://127.0.0.1:{profile["port"]}'
+    base = (health_url or f'http://127.0.0.1:{profile["port"]}').rstrip('/')
+    inference = (base_url or core.resolve_base_url(profile, pi.ENV_KEY)).rstrip('/')
     out = core.ROOT / 'logs' / name / datetime.now(timezone.utc).strftime('pi-smoke-%Y%m%dT%H%M%S.%fZ')
     out.mkdir(parents=True, exist_ok=False)
-    record = {'profile': name, 'alias': profile['alias'], 'base': base,
+    record = {'profile': name, 'alias': profile['alias'], 'base': base, 'inference_base_url': inference,
               'passed': False, 'checks': {}}
     try:
         record['health_before'] = probes.request(base, '/health', timeout=10)
@@ -96,7 +97,8 @@ def run(name, port=None, context=None, timeout=180):
             record['pi_version'] = execute('version', ['pi', '--version']).strip()
             execute('register', [sys.executable, str(core.ROOT / 'llama.py'), 'pi', 'add', name,
                                 '--config', str(agent / 'models.json'), '--port', str(profile['port']),
-                                '--context', str(profile['context']), '--output-tokens', str(min(1024, profile['context']))])
+                                '--context', str(profile['context']), '--output-tokens', str(min(1024, profile['context'])),
+                                '--model-base-url', inference])
             common = ['pi', '--offline', '--no-approve', '--no-session', '--no-mcp', '--no-extensions',
                       '--no-skills', '--no-prompt-templates', '--no-context-files', '--no-themes']
             listing = execute('discovery', common + ['--list-models', pi.PROVIDER])
@@ -151,10 +153,12 @@ def main():
     parser.add_argument('--port', type=int)
     parser.add_argument('--context', type=int)
     parser.add_argument('--timeout', type=int, default=180)
+    parser.add_argument('--base-url', help='PI inference base URL, including /v1')
+    parser.add_argument('--health-url', help='Backend HTTP root for health and identity checks')
     args = parser.parse_args()
     if args.timeout <= 0:
         parser.error('--timeout must be positive')
-    run(args.profile, args.port, args.context, args.timeout)
+    run(args.profile, args.port, args.context, args.timeout, args.base_url, args.health_url)
 
 
 if __name__ == '__main__':

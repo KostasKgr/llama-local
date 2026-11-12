@@ -56,7 +56,7 @@ def model_config(profile, output_tokens=None):
     return model
 
 
-def merge(source, profile, output_tokens=None, update=False, base_url=None):
+def merge(source, profile, output_tokens=None, update=False, base_url=None, model_base_url=None):
     # PI reads strict JSON. The span parser also rejects duplicate object keys.
     base = f'http://127.0.0.1:{profile["port"]}/v1' if base_url is None else base_url
     existing = jsonc.parse(source).value
@@ -78,6 +78,9 @@ def merge(source, profile, output_tokens=None, update=False, base_url=None):
             raise ValueError(f'Duplicate model id: {model["id"]}')
         seen.add(model['id'])
     desired = model_config(profile, output_tokens)
+    if model_base_url is not None:
+        model_base_url = core.resolve_base_url(profile, 'MODEL_BASE_URL', {'MODEL_BASE_URL': model_base_url})
+        desired.update(baseUrl=model_base_url, api='openai-completions')
     current = next((m for m in models if m['id'] == profile['alias']), None)
     changes, conflicts = [], []
 
@@ -101,13 +104,15 @@ def merge(source, profile, output_tokens=None, update=False, base_url=None):
         # Refuse to leave the selected alias on a different endpoint or protocol.
         if 'api' in current:
             desired['api'] = 'openai-completions'
-        if 'baseUrl' in current:
+        if 'baseUrl' in current and model_base_url is None:
             desired['baseUrl'] = base
         combine(current, desired, ['models', profile['alias']])
     wanted = {
         'baseUrl': base,
         'api': 'openai-completions',
     }
+    if model_base_url is not None and provider:
+        wanted = {}
     for key, value in wanted.items():
         if key in provider and provider[key] != value:
             conflicts.append(key)
@@ -125,13 +130,13 @@ def merge(source, profile, output_tokens=None, update=False, base_url=None):
     return source
 
 
-def add(name, config, dry_run=False, update=False, context=None, port=None, output_tokens=None):
+def add(name, config, dry_run=False, update=False, context=None, port=None, output_tokens=None, model_base_url=None):
     profile = core.load(name, {'context': context, 'port': port})
     base = core.resolve_base_url(profile, ENV_KEY)
     path = Path(config).expanduser().resolve()
     original = path.read_bytes() if path.exists() else None
     source = original.decode('utf-8') if original is not None else '{}\n'
-    updated = merge(source, profile, output_tokens, update, base)
+    updated = merge(source, profile, output_tokens, update, base, model_base_url)
     if updated == source:
         print(f'Already registered: {PROVIDER}/{profile["alias"]}')
         return

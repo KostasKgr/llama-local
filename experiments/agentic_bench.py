@@ -91,6 +91,8 @@ def stop_sampler(pid):
 
 
 def start(args):
+    if core.load(args.profile).get('backend') == 'strata':
+        sys.exit('Use experiments/strata_benchmark.py for Strata timings and owned telemetry')
     policy = install_pi_policy(args.fixture) if args.fixture else None
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     out = core.ROOT / 'logs' / args.profile / f'agentic-{stamp}-{args.label}'
@@ -247,22 +249,27 @@ def cool(args):
     print(f'GPU at {temp} C')
 
 
-parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-sub = parser.add_subparsers(dest='cmd', required=True)
-s = sub.add_parser('start')
-s.add_argument('--label', required=True)
-s.add_argument('--profile', default='swift15', choices=sorted(core.PROFILES))
-s.add_argument('--fixture', help='git checkout that must remain unchanged')
-s.add_argument('--interval-ms', type=int, default=1000)
-s.add_argument('--no-warm', action='store_true', help='do not load the model with a 1-token request first')
-s.set_defaults(func=start)
-f = sub.add_parser('finish')
-f.add_argument('run_dir')
-f.add_argument('--max-context', type=int, help='only count requests up to the first one above this context')
-f.set_defaults(func=finish)
-c = sub.add_parser('cool')
-c.add_argument('--below', type=int, default=50)
-c.add_argument('--timeout', type=int, default=900)
-c.set_defaults(func=cool)
-args = parser.parse_args()
-args.func(args)
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest='cmd', required=True)
+    s = sub.add_parser('start')
+    s.add_argument('--label', required=True)
+    s.add_argument('--profile', default='swift15', choices=sorted(core.PROFILES))
+    s.add_argument('--fixture', help='git checkout that must remain unchanged')
+    s.add_argument('--interval-ms', type=int, default=1000)
+    s.add_argument('--no-warm', action='store_true', help='do not load the model with a 1-token request first')
+    s.set_defaults(func=start)
+    f = sub.add_parser('finish')
+    f.add_argument('run_dir')
+    f.add_argument('--max-context', type=int, help='only count requests up to the first one above this context')
+    f.set_defaults(func=finish)
+    c = sub.add_parser('cool')
+    c.add_argument('--below', type=int, default=50)
+    c.add_argument('--timeout', type=int, default=900)
+    c.set_defaults(func=cool)
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == '__main__':
+    main()

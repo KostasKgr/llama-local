@@ -1,0 +1,168 @@
+# Strata Gyro-S
+
+The `gyros` profile serves text and tools with Strata on Windows. Its runtime,
+full GGUF, prepared pack and drafter live in separate managed Windows storage.
+It does not use an existing Strata application installation.
+
+Runtime and preparation pins live in `manifests/strata.json`; model sources live
+in `manifests/models.json`. Defaults and the client alias live in
+`profiles/gyros.json`. Installing this profile leaves the llama.cpp profiles and
+their runtime files intact.
+
+## Install and verify
+
+Run from the repository root:
+
+```bash
+python3 llama.py install gyros
+python3 llama.py verify gyros
+python3 llama.py start gyros --dry-run
+```
+
+Installation requires a Windows NVIDIA GPU compatible with the pinned engine,
+WSL interoperability, and enough free space for the complete GGUF and preparation.
+The first installation checks an 80 GiB allowance, counting a resumed partial
+model download. It verifies downloads before promotion and prepares the native
+model pack and stock DFlash2 drafter with the bundled Windows interpreter.
+No compiler, system Python installation, driver change or CUDA toolkit is needed.
+
+`LLAMA_STRATA_WINDOWS_ROOT` in the ignored `.env` selects a dedicated local Windows
+directory. Its default is `C:\AI\llama-local\strata`; it is independent of
+`LLAMA_WINDOWS_ROOT`. Keep it on a fast local SSD: the full GGUF contains the PLE
+table, which the engine reads during inference. Do not remove the GGUF after
+preparation.
+
+`verify` checks complete source artifacts, installed runtime files against their
+pinned archives, gguf-py source identities, and prepared outputs. Generated native
+pack hashes are local provenance; the drafter additionally has upstream expected
+output hashes. Starting a profile never downloads or prepares missing files.
+
+Installation is resumable. A corrupted installed runtime or prepared output is
+refused instead of being accepted as a new baseline. For changed preparation pins,
+use a fresh managed storage directory and keep the prior directory for rollback.
+
+## Serve
+
+```bash
+python3 llama.py start gyros
+# From another terminal:
+python3 llama.py status gyros
+python3 llama.py stop gyros
+```
+
+The foreground launcher owns a Windows Job Object containing the API server and
+its engine descendants. The Windows owner stops after launcher heartbeat loss;
+closing its job also ends descendants after a crash. Stop waits for the captured
+owner to exit. It never stops processes by executable name.
+
+The WSL scope limits apply to the supervisor, not Windows RAM or VRAM. Strata's
+resident-expert mode keeps experts outside the GPU cache in RAM when they fit;
+the engine may use its documented file-backed fallback when memory is short.
+Inspect the engine log for the effective cache, RAM placement and fallback.
+The profile's VRAM reserve leaves room for runtime workspace and display use;
+the automatic expert cache uses the remaining capacity.
+
+Start supports `--context`, `--port`, `--spec dflash2|none` and `--draft-max`.
+Equivalent `GYROS_*` environment variables follow the normal CLI-over-environment
+precedence. llama.cpp cache, batch and loading flags are refused for Strata.
+Without a drafter, the native IQ path still uses its minimum verification buffer;
+prompt-lookup drafting is disabled as well.
+
+## llama-swap and pi
+
+The default coordinator selection remains Bolt and Swift. Enable Gyro explicitly
+after installing all selected profiles, with no other server using the GPU or ports:
+
+```bash
+python3 llama.py swap config --profiles bolt35 swift15 gyros
+python3 llama.py swap start --profiles bolt35 swift15 gyros
+python3 llama.py swap status
+```
+
+All selected models share one exclusive group. A switch completes backend cleanup
+before loading another model. Selecting Gyro gives the proxy a longer readiness
+deadline for its larger model. Manual production-profile start/stop refuses while
+the coordinator owns the machine; use `swap stop` first.
+
+Register only Gyro's transport against the local public proxy, preserving the
+shared provider endpoint used by other pi models:
+
+```bash
+python3 llama.py pi add gyros --dry-run --model-base-url http://127.0.0.1:1235/v1
+python3 llama.py pi add gyros --model-base-url http://127.0.0.1:1235/v1
+pi --list-models llama-local
+```
+
+Registration preserves unrelated models and settings and creates a backup before
+an actual edit. `--update` is required for conflicting managed values. It does not
+select a default model. Strata advertises its supported reasoning-effort levels;
+the profile remains text-only.
+
+## Check and measure
+
+Run `task agent:verify` after changes. When installed, its Windows lifecycle tests
+use CPU-only API fixtures and nested child jobs; they never load model weights.
+Live GPU checks must run sequentially:
+
+```bash
+python3 llama.py smoke bolt35
+python3 llama.py smoke swift15
+python3 llama.py smoke gyros
+python3 experiments/swap_smoke.py --profiles bolt35 swift15 gyros
+```
+
+Against an already loaded Gyro backend, check pi inference through the public proxy
+and health through the private backend separately:
+
+```bash
+python3 experiments/pi_smoke.py gyros \
+  --base-url http://127.0.0.1:1235/v1 --health-url http://127.0.0.1:1257
+```
+
+With the coordinator stopped and GPU free, the fixed baseline owns its trial proxy
+and unique model scopes, including cleanup on failure:
+
+```bash
+python3 experiments/strata_benchmark.py run --repeats 3
+```
+
+For a real T3/pi investigation, start the three-profile coordinator and bracket a
+new thread on the benchmark fixture:
+
+```bash
+python3 experiments/strata_benchmark.py start --label t3-01 \
+  --fixture /projects/agentic-bench-t3code
+# Use the printed run directory's prompt.txt in a new T3/pi thread on that fixture.
+python3 experiments/strata_benchmark.py finish RUN_DIRECTORY \
+  --thread-id THREAD_ID --pi-session PI_SESSION_FILE
+python3 experiments/strata_benchmark.py report logs/gyros
+```
+
+Select the registered Gyro alias explicitly, thinking `high`, and the fixture's
+root workspace. Use a fresh engine and thread for each attempt. Stop only that
+thread if it exceeds twenty minutes or 96K context. Preserve failed attempts.
+The session audit requires successful read-tool results covering the five required
+files and the random nonce in the final answer. Review the cited call chain and
+risks against the source; thread completion alone is insufficient.
+The prompt limits extra research so the required full-file reads fit the context
+budget. Keep its recorded hash when comparing repeated attempts.
+
+Logs and telemetry stay under ignored `logs/gyros/` and the managed Windows run
+directory. The Windows owner contains its GPU/power collectors in its job. Timing
+summaries exclude cached input from prefill and keep engine-generated token counts
+separate from API output counts. Samples can miss peaks, and power counters do not
+measure whole-machine energy. Fresh-process loading does not imply a cold OS cache.
+
+## Roll back
+
+```bash
+python3 llama.py swap stop
+python3 llama.py stop gyros
+python3 llama.py swap start
+```
+
+This returns to the default Bolt/Swift selection without changing either profile.
+Restore the backup printed by pi registration if no concurrent config edits have
+occurred; otherwise remove only the Gyro model entry. Keep managed artifacts for a
+later retry. Before deleting a managed directory, confirm its owner has exited;
+never remove an unrelated Strata installation or shared llama.cpp runtime.

@@ -1,0 +1,46 @@
+{
+  "backend": "strata",
+  "platform": "windows",
+  "runtime": "strata-0.1.59-cuda13",
+  "model": "gyros/Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf",
+  "context": 131072,
+  "parallel": 1,
+  "kv": "int8",
+  "spec": "dflash2",
+  "draft_max": 6,
+  "draft_conf": 0.35,
+  "ram_keep_gib": 6,
+  "vram_reserve_mib": 1536,
+  "port": 1235,
+  "scope": "gyros",
+  "alias": "qwen3.8-flash-next-gyro-s-strata",
+  "opencode": {
+    "name": "Strata Qwen 3.8 Flash Next Gyro-S (128K)",
+    "output_tokens": 8192,
+    "reasoning": true,
+    "temperature": true,
+    "tool_call": true,
+    "modalities": {
+      "input": [
+        "text"
+      ],
+      "output": [
+        "text"
+      ]
+    },
+    "variants": {
+      "none": {
+        "reasoningEffort": "none"
+      },
+      "low": {
+        "reasoningEffort": "low"
+      },
+      "medium": {
+        "reasoningEffort": "medium"
+      },
+      "high": {
+        "reasoningEffort": "high"
+      }
+    }
+  }
+}

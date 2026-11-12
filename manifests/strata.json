@@ -1,0 +1,134 @@
+{
+  "release": "v0.2.13",
+  "control_version": "0.1.59",
+  "engine_version": "0.1.59",
+  "source_commit": "d2f096475817d4666c364c820b0ca830f751cfc5",
+  "engine_manifest_sha256": "102238fc50b9941a990cafcb0ead565eaf34ae235685d8fbdd4471774f066f88",
+  "packages": [
+    {
+      "file": "strata-control-0.1.59-windows-x86_64.zip",
+      "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.13/strata-control-0.1.59-windows-x86_64.zip",
+      "size": 73567347,
+      "sha256": "c81f6800094942a5e750c7d93f348062bc16484f946ea83b0c0d2f8c91c44e87"
+    },
+    {
+      "file": "strata-engine-0.1.59-windows-x86_64-cuda-cuda13.tar.gz",
+      "url": "https://github.com/Niko1221/Strata/releases/download/v0.2.13/strata-engine-0.1.59-windows-x86_64-cuda-cuda13.tar.gz",
+      "size": 630783433,
+      "sha256": "3f071a7ccbbf3dcdefed8bff777896d8dd0b580417a078154a7d2c2402ec4158"
+    }
+  ],
+  "gguf_py": {
+    "commit": "3cf03257f219afbe7334045ff7c6a06ac68c627d",
+    "tree": "f417f46ef0027ae83755a5c56af0a179ac9c9210",
+    "files": [
+      {
+        "file": "gguf/__init__.py",
+        "size": 219,
+        "git_blob": "243defc4c1ca42d3713017d8902592f54ac849cd"
+      },
+      {
+        "file": "gguf/constants.py",
+        "size": 233683,
+        "git_blob": "27c126b3656b37cd4cca385b42c8c53b6d902a8d"
+      },
+      {
+        "file": "gguf/gguf.py",
+        "size": 478,
+        "git_blob": "651a81eb828248728f854c85c1a437b52892f275"
+      },
+      {
+        "file": "gguf/gguf_reader.py",
+        "size": 16321,
+        "git_blob": "bf3e083800b01c822989c096f0d875dc750ab022"
+      },
+      {
+        "file": "gguf/gguf_writer.py",
+        "size": 70929,
+        "git_blob": "56cc65a70a0d03c50bf98907627b1bedc28e1993"
+      },
+      {
+        "file": "gguf/lazy.py",
+        "size": 12015,
+        "git_blob": "a39f22321597311ad54d03d360e155ae309ff5fd"
+      },
+      {
+        "file": "gguf/metadata.py",
+        "size": 39318,
+        "git_blob": "d5836cc68d7a96cd267e70800994bb3cc7bfcad0"
+      },
+      {
+        "file": "gguf/py.typed",
+        "size": 0,
+        "git_blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+      },
+      {
+        "file": "gguf/quants.py",
+        "size": 64946,
+        "git_blob": "80966b6ef1518a45b86745d94eb70d05c3c5490f"
+      },
+      {
+        "file": "gguf/scripts/gguf_convert_endian.py",
+        "size": 7681,
+        "git_blob": "31618acfc79eac3d8cd3c8111550f6cf8f21147b"
+      },
+      {
+        "file": "gguf/scripts/gguf_dump.py",
+        "size": 23104,
+        "git_blob": "8177dff386c7ee1e130ed0a013c2d297ee866439"
+      },
+      {
+        "file": "gguf/scripts/gguf_editor_gui.py",
+        "size": 64438,
+        "git_blob": "293316afed4e497ce3e426243d9fbd30193f5c30"
+      },
+      {
+        "file": "gguf/scripts/gguf_hash.py",
+        "size": 3725,
+        "git_blob": "3ef98992197e987d8aefc8fb5f5bf9c787e9d06a"
+      },
+      {
+        "file": "gguf/scripts/gguf_new_metadata.py",
+        "size": 10231,
+        "git_blob": "c67436bad4af6dfcf662b23aff3d3a5bb1d26257"
+      },
+      {
+        "file": "gguf/scripts/gguf_set_metadata.py",
+        "size": 4145,
+        "git_blob": "f5809c35c887086f8055e828719041f8ae3ea749"
+      },
+      {
+        "file": "gguf/tensor_mapping.py",
+        "size": 134036,
+        "git_blob": "d2dfeece59522ffb417f70939cf94ee157591eee"
+      },
+      {
+        "file": "gguf/utility.py",
+        "size": 13534,
+        "git_blob": "154351d8ed63c50f8a66cc0bb9152ec020414077"
+      },
+      {
+        "file": "gguf/vocab.py",
+        "size": 42431,
+        "git_blob": "d93b94f2d792147276be21db004dbd8d4edef82c"
+      }
+    ],
+    "license": {
+      "file": "LICENSE",
+      "size": 1072,
+      "git_blob": "76f67efdc6470081b512a8db5bf2b1d4962d9c3c"
+    }
+  },
+  "generated_drafters": [
+    {
+      "file": "qwen3.8-flash-next-dflash2.q4_0.pack",
+      "size": 522458112,
+      "sha256": "cda40d62d0eb8f37ed6e272142641a1d2f0de4a32f9e14d0416e7a71534849f1"
+    },
+    {
+      "file": "qwen3.8-flash-next-dflash2.q4_0-selq4.pack",
+      "size": 339694592,
+      "sha256": "4a42b98220ea7880664002c8edda1563aecbae754b762a2e2f31b2b91ee93ecd"
+    }
+  ]
+}

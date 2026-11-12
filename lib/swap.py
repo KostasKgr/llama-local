@@ -1,4 +1,4 @@
-"""Optional, two-model llama-swap coordinator using the existing launchers."""
+"""Optional exclusive llama-swap coordinator using backend-aware launchers."""
 import fcntl
 import json
 import os
@@ -15,6 +15,13 @@ from . import core
 
 PROFILES = ('bolt35', 'swift15')
 UNIT = 'llama-local-swap.service'
+
+
+def selected(profiles=None):
+    names = tuple(PROFILES if profiles is None else profiles)
+    if not names or len(set(names)) != len(names) or any(n not in core.PROFILES for n in names):
+        raise ValueError('Select distinct supported swap profiles')
+    return names
 
 
 def directory():
@@ -41,7 +48,7 @@ def managed():
 
 
 def guard(p):
-    if (p['scope'] in PROFILES and os.environ.get('LLAMA_SWAP_MANAGED') != '1'
+    if (p['scope'] in core.PROFILES and os.environ.get('LLAMA_SWAP_MANAGED') != '1'
             and managed()):
         raise ValueError('Profile is reserved by llama-swap; use llama.py swap stop first')
 
@@ -61,10 +68,10 @@ def profile_port(p, backend_port, windows_backend_port=None):
     return backend_port
 
 
-def config(port=1235, backend_port=1236, windows_backend_port=None):
+def config(port=1235, backend_port=1236, windows_backend_port=None, profiles=None):
     ports(port, backend_port, windows_backend_port)
     models = {}
-    for name in PROFILES:
+    for name in selected(profiles):
         p = core.load(name)
         number = profile_port(p, backend_port, windows_backend_port)
         launcher = [sys.executable, str(core.ROOT / 'llama.py')]
@@ -77,8 +84,8 @@ def config(port=1235, backend_port=1236, windows_backend_port=None):
         }
     # JSON is valid YAML, so generation needs no extra YAML dependency.
     return json.dumps({
-        'healthCheckTimeout': 300,
-        'unloadTimeout': 40,
+        'healthCheckTimeout': 960 if 'gyros' in selected(profiles) else 300,
+        'unloadTimeout': 90 if 'gyros' in selected(profiles) else 40,
         'globalTTL': 0,
         'sendLoadingState': False,
         'models': models,
@@ -125,7 +132,7 @@ def service_state():
     return unit_state(UNIT)
 
 
-def preflight(port, backend_port, windows_backend_port=None):
+def preflight(port, backend_port, windows_backend_port=None, profiles=None):
     ports(port, backend_port, windows_backend_port)
     for number in sorted({port, backend_port, windows_backend_port} - {None}):
         with socket.socket() as sock:
@@ -133,28 +140,29 @@ def preflight(port, backend_port, windows_backend_port=None):
             if sock.connect_ex(('127.0.0.1', number)) == 0:
                 raise ValueError(f'Port {number} occupied; stop its owner first')
     # Fixed scopes and backend port intentionally serialize these profiles.
-    for name in PROFILES:
+    for name in selected(profiles):
         p = core.load(name)
         p['port'] = profile_port(p, backend_port, windows_backend_port)
         p['scope'] = name
         core.preflight(p)
 
 
-def start(port=1235, backend_port=1236, windows_backend_port=None):
+def start(port=1235, backend_port=1236, windows_backend_port=None, profiles=None):
     if managed() or service_state() not in ('inactive', 'failed'):
         raise ValueError('llama-swap already active or cleanup pending')
     if not os.access(binary(), os.X_OK):
         raise ValueError('llama-swap missing; run llama.py swap install first')
-    preflight(port, backend_port, windows_backend_port)
+    names = selected(profiles)
+    preflight(port, backend_port, windows_backend_port, profiles)
     token = uuid.uuid4().hex
     run_dir = directory() / token
     run_dir.mkdir(parents=True)
-    (run_dir / 'config.yaml').write_text(config(port, backend_port, windows_backend_port))
+    (run_dir / 'config.yaml').write_text(config(port, backend_port, windows_backend_port, profiles))
     launcher = [sys.executable, str(core.ROOT / 'llama.py'), 'swap']
     cleanup_cmd = shlex.join(launcher + ['_cleanup', '--token', token])
     # Transient services inherit the manager environment, not the caller's.
     profile_env = []
-    for name in PROFILES:
+    for name in names:
         prefix = core.PROFILES[name][0]
         for key in core.FIELDS:
             variable = prefix + '_' + ('SPEC_TYPE' if key == 'spec' else key.upper())
@@ -168,12 +176,13 @@ def start(port=1235, backend_port=1236, windows_backend_port=None):
         '-p', 'StandardError=inherit',
     ] + profile_env + launcher + ['_serve', '--token', token, '--run-dir', str(run_dir),
                     '--port', str(port), '--backend-port', str(backend_port)]
-      + ([] if windows_backend_port is None else ['--windows-backend-port', str(windows_backend_port)]), check=True)
+      + ([] if windows_backend_port is None else ['--windows-backend-port', str(windows_backend_port)])
+      + ([] if profiles is None else ['--profiles', *names]), check=True)
     print('llama-swap starting:', f'http://127.0.0.1:{port}/v1')
     print('Coordinator log:', run_dir / 'coordinator.log')
 
 
-def serve(token, run_dir, port, backend_port, windows_backend_port=None):
+def serve(token, run_dir, port, backend_port, windows_backend_port=None, profiles=None):
     """Private service entrypoint; ExecStopPost also handles abrupt termination."""
     directory().mkdir(parents=True, exist_ok=True)
     with (directory() / 'instance.lock').open('a+') as lock:
@@ -184,9 +193,10 @@ def serve(token, run_dir, port, backend_port, windows_backend_port=None):
         if state_path().exists():
             raise ValueError('Previous llama-swap cleanup is pending')
         os.environ['LLAMA_SWAP_MANAGED'] = '1'
-        preflight(port, backend_port, windows_backend_port)
+        preflight(port, backend_port, windows_backend_port, profiles)
         state = {'token': token, 'port': port, 'backend_port': backend_port,
-                 'windows_backend_port': windows_backend_port, 'run_dir': str(run_dir)}
+                 'windows_backend_port': windows_backend_port, 'run_dir': str(run_dir),
+                 'profiles': list(selected(profiles))}
         temporary = Path(run_dir) / 'active.json'
         temporary.write_text(json.dumps(state) + '\n')
         temporary.replace(state_path())
@@ -213,12 +223,19 @@ def cleanup(token):
     if state['token'] != token:
         return
     errors = []
-    for name in PROFILES:
+    for name in selected(state.get('profiles')):
         try:
             # is-active alone misses a scope still deactivating during a swap.
             if unit_state(name + '.scope') not in ('inactive', 'failed'):
-                subprocess.run(['systemctl', '--user', 'stop', name + '.scope'], check=True, timeout=40)
+                if name == 'gyros':
+                    from . import strata
+                    strata.stop(core.load(name))
+                else:
+                    subprocess.run(['systemctl', '--user', 'stop', name + '.scope'], check=True, timeout=40)
                 core.wait_windows_exit(core.load(name))
+            elif name == 'gyros':
+                from . import strata
+                strata.stop(core.load(name))
         except (ValueError, OSError, subprocess.SubprocessError) as exc:
             errors.append(name + ': ' + str(exc))
     if errors:
@@ -238,7 +255,10 @@ def stop():
 
 def status():
     print('llama-swap:', service_state())
+    names = PROFILES
     if state_path().exists():
-        print(state_path().read_text().strip())
-    for name in PROFILES:
+        state = state_path().read_text()
+        print(state.strip())
+        names = selected(json.loads(state).get('profiles'))
+    for name in names:
         print(name, 'active' if core.scope_active({'scope': name}) else 'inactive')

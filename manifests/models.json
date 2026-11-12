@@ -26,5 +26,25 @@
       "sha256": "8103aa42fd31fb661c3fbe8701d04d698ea2c5d09351dc3e8c9da639958de989",
       "size": 736812096
     }
+  ],
+  "gyros": [
+    {
+      "file": "gyros/Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf",
+      "url": "https://huggingface.co/agentionai/Qwen3.8-Flash-Next-Gyro-GGUF/resolve/1ada08422e404aca51ab9df665f089f34c419c6b/Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf",
+      "size": 58487015808,
+      "sha256": "c6ea1b08ca312f99095b27588ba35976b53f948268e7f91e7761926aa01d9c87"
+    },
+    {
+      "file": "gyros/drafter/config.json",
+      "url": "https://huggingface.co/incoai/Qwen3.8-Flash-Next-DFlash2/resolve/a22a1744e85c17364dcc54a6a420af7135d4c7f6/config.json",
+      "size": 1236,
+      "sha256": "2409575986f9ea24d455343eb469c0e6940def5edab1d1be503bb8eb4cc3b1b9"
+    },
+    {
+      "file": "gyros/drafter/model.safetensors",
+      "url": "https://huggingface.co/incoai/Qwen3.8-Flash-Next-DFlash2/resolve/a22a1744e85c17364dcc54a6a420af7135d4c7f6/model.safetensors",
+      "size": 1206140008,
+      "sha256": "d6723f2a359eaf33ec0c95f22ae8edda896774020c552296a85e1913b4d3186f"
+    }
   ]
 }

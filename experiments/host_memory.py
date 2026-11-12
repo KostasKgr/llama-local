@@ -133,6 +133,33 @@ def read(path):
                 for row in csv.DictReader(f)]
 
 
+def summarize_strata(path, since=None, until=None, busy_only=False):
+    """Windows-owner telemetry: epoch seconds and a sum over captured API/engine identities."""
+    with Path(path).open(newline='') as stream:
+        rows = []
+        for row in csv.DictReader(stream):
+            try:
+                values = {k: float(v) if v and v.strip() not in ('N/A', '[N/A]') else None for k, v in row.items()}
+            except (ValueError, AttributeError, TypeError):
+                continue
+            stamp = values.get('time')
+            if busy_only and (values.get('utilization_pct') or 0) < 10:
+                continue
+            if stamp is not None and (since is None or stamp >= since) and (until is None or stamp <= until):
+                rows.append(values)
+    result = {'samples': len(rows)}
+    if not rows:
+        return result
+    for field in rows[0]:
+        if field == 'time':
+            continue
+        values = [r[field] for r in rows if r.get(field) is not None]
+        if values:
+            result[field] = {'median': st.median(values), 'min': min(values), 'max': max(values)}
+    result['first'], result['last'] = rows[0], rows[-1]
+    return result
+
+
 def seconds(row):
     return datetime.strptime(row['time'], '%Y%m%dT%H%M%SZ').timestamp()
 

@@ -57,7 +57,7 @@ class SwapIntegrationTests(unittest.TestCase):
                 f'sys.path.insert(0, {str(repository)!r})\n'
                 'from lib import core, swap\n'
                 f'core.ROOT = Path({temp!r})\n'
-                'swap.PROFILES = ()\nswap.preflight = lambda *args: None\n'
+                'swap.PROFILES = ()\nswap.selected = lambda profiles=None: ()\nswap.preflight = lambda *args: None\n'
                 'action = sys.argv[2]\n'
                 'opts = dict(zip(sys.argv[3::2], sys.argv[4::2]))\n'
                 'if action == "_cleanup": swap.cleanup(opts["--token"])\n'
@@ -108,7 +108,7 @@ class SwapIntegrationTests(unittest.TestCase):
             backend = free_port()
         with tempfile.TemporaryDirectory(prefix='swap integration ') as temp:
             root = Path(temp)
-            config = json.loads(swap.config(public, backend))
+            config = json.loads(swap.config(public, backend, profiles=['bolt35', 'swift15', 'gyros']))
             names = list(config['models'])
             fixture = Path(__file__).parent / 'fixtures' / 'swap_backend.py'
             for name, model in config['models'].items():
@@ -159,13 +159,16 @@ class SwapIntegrationTests(unittest.TestCase):
                              {'type': 'text', 'text': 'image'}]
                     self.assertEqual(request(names[1], image)['received']['messages'][0]['content'], image)
                     self.assertEqual(request(names[0])['model'], names[0])
+                    self.assertEqual(request(names[2])['model'], names[2])
+                    self.assertEqual(request(names[0])['model'], names[0])
                     self.assertEqual(len(list(root.glob('*.pid'))), 1)
                     entries = [json.loads(line) for line in events.read_text().splitlines()]
                     transitions = [(e['model'], e['event']) for e in entries
                                    if e['event'] in ('start', 'stop')]
                     self.assertEqual(transitions, [(names[0], 'start'), (names[0], 'stop'),
                                                    (names[1], 'start'), (names[1], 'stop'),
-                                                   (names[0], 'start')])
+                                                   (names[0], 'start'), (names[0], 'stop'),
+                                                   (names[2], 'start'), (names[2], 'stop'), (names[0], 'start')])
                     slow_end = next(i for i, e in enumerate(entries) if e['event'] == 'slow-end')
                     first_stop = next(i for i, e in enumerate(entries) if e['event'] == 'stop')
                     self.assertLess(slow_end, first_stop)

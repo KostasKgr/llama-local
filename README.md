@@ -4,6 +4,11 @@ One WSL/Linux repository for Swift 1.5 IQ3_S MTP and Nemotron 3.5 Bolt E4B DFlas
 Both profiles use a pinned Windows-native llama.cpp runtime with CUDA 13.4.
 No source build, CUDA toolkit installation, or driver changes are required.
 
+The optional [Strata Gyro-S backend](docs/strata.md) has its own pinned Windows
+runtime, full GGUF and managed storage. It supports text and tools, with explicit
+opt-in to the exclusive llama-swap group. The [Gyro-S baseline](reports/gyros/baseline.md)
+records API measurements and real T3 tool-use results.
+
 Requirements: Python 3.12+, curl, working NVIDIA GPU passthrough, systemd user
 manager and cgroup v2. Tested on an RTX 5090 Laptop GPU with 24 GB VRAM.
 
@@ -33,7 +38,7 @@ registration are available through the explicit commands below.
 | swift15 | b12110 CUDA 13.4, Windows-native | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
 | bolt35 | b12110 CUDA 13.4, Windows-native | 65536 | f16/f16 | 2048/512 | separate DFlash, max 7 |
 
-All profiles use full layer offload, Flash Attention, Direct I/O loading,
+The llama.cpp profiles use full layer offload, Flash Attention, Direct I/O loading,
 two checkpoints and 2 GiB RAM prompt cache, except Swift's twenty checkpoints and 10 GiB
 (`"cache_ram": 10240` MiB in `profiles/swift15.json`). Swift uses the runtime's
 default minimum checkpoint spacing of 8192 tokens; this is a minimum, not an
@@ -281,7 +286,7 @@ PI's off/low/medium/xhigh send `reasoning_effort` none/low/medium/xhigh respecti
 Update an older binary-only registration with `python3 llama.py pi add swift15 --update`.
 To default Swift to xhigh, set `modelThinkingLevels["llama-local/swift-1.5-qwen3.8-27b-iq3s-mtp"]`
 to `"xhigh"` in PI's `settings.json`; registration does not edit settings.
-Other profiles use `chat_template_kwargs.enable_thinking`:
+Bolt uses `chat_template_kwargs.enable_thinking`:
 `--thinking off` disables it and `--thinking high` enables it. Intermediate effort
 levels, xhigh and max are not advertised for those binary-only profiles. Sampling is
 left to the server.
@@ -338,11 +343,12 @@ or profile defaults changed.
 
 ## On-demand Bolt and Swift with llama-swap
 
-The optional coordinator exposes exactly the existing Bolt and Swift aliases at
+By default, the optional coordinator exposes the existing Bolt and Swift aliases at
 `http://127.0.0.1:1235/v1`. Both run natively on Windows behind private port 1257;
 port 1236 remains for WSL backends. Only one model runs at a time: switching stops
 the current backend before starting the next.
 Other profiles remain available for manual launching and are not listed by swap.
+Strata can be selected explicitly as described in [its operating guide](docs/strata.md).
 The coordinator does not load models at startup or unload them on an idle timer.
 
 ```bash

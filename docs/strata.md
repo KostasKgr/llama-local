@@ -44,9 +44,12 @@ preparation.
 pinned archives, gguf-py source identities, and prepared outputs. Generated native
 pack hashes are local provenance; the drafter additionally has upstream expected
 output hashes. Starting a profile never downloads or prepares missing files.
-Start re-hashes the prepared outputs except `experts.bin`, whose size it checks:
-hashing its 24 GiB added about 21 s to every load. Run `verify gyros` after any
-doubt about the managed storage.
+Install and `verify` do all hashing. Start checks only that files exist with
+their recorded sizes: prepared outputs against `installation.json`, the GGUF
+against its pin, and engine files against the engine manifest. Hashing at start
+cost about 2.3 s in the launcher and 1.2 s in the Windows owner, or about 21 s more
+with `experts.bin`. The engine signature is checked at install. Run `verify gyros`
+after any doubt about the managed storage.
 
 Installation is resumable. A corrupted installed runtime or prepared output is
 refused instead of being accepted as a new baseline. For changed preparation pins,
@@ -114,10 +117,12 @@ Measured 2026-11-12, alternating sequential starts, GPU free, a 28-token and a
 | `experts.bin` | 22.4 / 22.1 s | 4.1 / 4.0 s, 3.8 GB/s | 5 / 5 s | 2,795 / 2,807 tok/s | 102 / 86, 124 / 105 tok/s |
 
 A cold first request through llama-swap (launcher checks, engine load, answer)
-took 30.7 s, against about 82 s before. Of that, the engine load was 22.7 s, the
-launcher's file checks 2.3 s (mostly hashing `dense.bin` and the drafters) and the
-owner's engine verification 1.2 s; the remaining 4–5 s (process and scope
-start-up, readiness polling, the request) was not broken down. Both placed
+took 30.6 s, against about 82 s before. Of that, the launcher took 1.9 s before the
+engine scope (1 s of it a connect timeout probing the free backend port), the
+owner's checks 0.6 s, the engine load 21.4 s, and about 5 s passed between engine
+readiness and the answer. Hashing at start had added about 3.5 s (now at install).
+Both first requests right after a fresh `swap start` were slower (41.9 s, and
+once an empty reply after 130 s with no engine started), not yet explained. Both placed
 14,681 experts in VRAM and 12.99 GiB in RAM. Minimum available RAM
 and peak commit during load were unchanged; CPU package energy during load fell
 from about 1.8 to 0.55 kJ. Prefill and decode were not re-measured beyond these

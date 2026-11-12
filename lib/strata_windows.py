@@ -73,16 +73,22 @@ def same_process(expected):
     return actual is not None and actual == expected
 
 
-def check_engine(root):
+def check_engine(root, full=True):
     from strata_control import engine_component as ec, signing
     folder = root / 'runtimes' / 'engine-0.1.59-cuda13'
-    signing.install_component_verifier(signing.load_trusted_keys(environ={}))
     component = ec.read_manifest(folder)
     if component.version != '0.1.59' or component.platform != 'windows-x86_64' or component.backend != 'cuda':
         raise ValueError('Unexpected engine component identity')
-    if ec.verify_signature(component, environ={'STRATA_REQUIRE_SIGNED_COMPONENTS': '1'}) != 'verified':
-        raise ValueError('Engine signature was not verified')
-    ec.verify(component, full=True)
+    if full:
+        signing.install_component_verifier(signing.load_trusted_keys(environ={}))
+        if ec.verify_signature(component, environ={'STRATA_REQUIRE_SIGNED_COMPONENTS': '1'}) != 'verified':
+            raise ValueError('Engine signature was not verified')
+        ec.verify(component, full=True)
+    else:
+        # Serving checks sizes only; install's probe verified the signature and hashed every file (~1.2 s).
+        for rel, _, size in component.files:
+            if (folder / rel).stat().st_size != size:
+                raise ValueError('Engine file size mismatch; run verify gyros: ' + rel)
     smi = str(Path(os.environ['SystemRoot']) / 'System32/nvidia-smi.exe')
     gpu = subprocess.check_output([smi, '--query-gpu=driver_version,compute_cap',
                                    '--format=csv,noheader,nounits'], text=True, timeout=15).strip()
@@ -297,7 +303,7 @@ def serve(root, run_dir):
         raise ValueError('Run directory outside managed storage')
     k, handle = job()
     if launch.get('verify_engine', True):
-        check_engine(root)
+        check_engine(root, full=False)
     record = {'token': launch['token'], 'owner': identity(os.getpid()), 'state': 'starting',
               'scope': launch['scope'], 'port': launch['port'], 'started_at': time.time()}
     write(run_dir / 'owner.json', record)

@@ -52,36 +52,37 @@ class StrataTests(unittest.TestCase):
     def test_start_refuses_a_pack_without_experts_bin(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(strata, 'root', return_value=Path(temp)):
             p = core.load('gyros')
-            for path in (strata.python(), strata.engine(), Path(temp) / 'installation.json',
-                         strata.pack(p) / 'native_experts.txt', strata.pack(p) / 'tokenizer/vocab.json',
+            for path in (strata.python(), strata.engine(), strata.engine().parent / 'engine-component.json',
+                         Path(temp) / 'installation.json', strata.pack(p) / 'native_experts.txt', strata.pack(p) / 'tokenizer/vocab.json',
                          Path(temp) / 'models' / p['model']):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('x')
             with self.assertRaisesRegex(ValueError, 'experts.bin'):
                 strata.preflight(p)
 
-    def test_start_checks_experts_bin_size_without_hashing_it(self):
+    def test_start_checks_generated_sizes_without_hashing(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(strata, 'root', return_value=Path(temp)):
             p = core.load('gyros', {'spec': 'none'})
-            for path in (strata.python(), strata.engine(), strata.pack(p) / 'native_experts.txt',
-                         strata.pack(p) / 'tokenizer/vocab.json', Path(temp) / 'models' / p['model']):
+            for path in (strata.python(), strata.engine(), strata.engine().parent / 'engine-component.json',
+                         strata.pack(p) / 'native_experts.txt', strata.pack(p) / 'tokenizer/vocab.json',
+                         Path(temp) / 'models' / p['model']):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('x')
             (strata.pack(p) / 'experts.bin').write_bytes(b'1234')
             installation = {'manifest_sha256': 'm', 'model_manifest': core.manifest('models')['gyros'],
                             'generated': {'packs/gyros/experts.bin': {'size': 4, 'sha256': 'never'},
-                                          'packs/gyros/index.txt': {'size': 1, 'sha256': 'h'}}}
+                                          'packs/gyros/native_experts.txt': {'size': 1, 'sha256': 'never'}}}
             (Path(temp) / 'installation.json').write_text(json.dumps(installation))
-            checked = []
-            with patch.object(strata, 'verify_file', lambda path, artifact: checked.append(Path(path).name)), \
-                    patch.object(strata, 'digest', return_value='m'), patch.object(strata, 'state') as state:
+            hashed = []
+            with patch.object(strata, 'digest', lambda path: hashed.append(Path(path).name) or 'm'), \
+                    patch.object(strata, 'state') as state:
                 state.return_value.exists.return_value = False
                 with self.assertRaisesRegex(ValueError, 'Full Gyro GGUF size mismatch'):
                     strata.preflight(p)
-                self.assertEqual(checked, ['engine-component.json', 'index.txt'])
+                self.assertEqual(hashed, ['strata.json'])
                 installation['generated']['packs/gyros/experts.bin']['size'] = 5
                 (Path(temp) / 'installation.json').write_text(json.dumps(installation))
-                with self.assertRaisesRegex(ValueError, 'experts.bin size mismatch'):
+                with self.assertRaisesRegex(ValueError, 'Size mismatch; run verify gyros: packs/gyros/experts.bin'):
                     strata.preflight(p)
 
     def test_load_summary_reports_engine_phases_and_disk(self):

@@ -447,7 +447,7 @@ def port_open(port):
 
 
 def preflight(p):
-    for path in (python(), engine(), root() / 'installation.json', pack(p) / 'native_experts.txt',
+    for path in (python(), engine(), engine().parent / 'engine-component.json', root() / 'installation.json', pack(p) / 'native_experts.txt',
                  pack(p) / 'tokenizer/vocab.json', pack(p) / 'experts.bin', root() / 'models' / p['model']):
         if not path.is_file():
             raise ValueError('Strata artifact missing; run llama.py install gyros: ' + str(path))
@@ -455,19 +455,15 @@ def preflight(p):
         for path in (root() / 'dflash2' / pins()['generated_drafters'][1]['file'], root() / 'dflash2/draft_vocab.bin'):
             if not path.is_file():
                 raise ValueError('Strata drafter missing; run install gyros')
-    verify_file(engine().parent / 'engine-component.json', {'sha256': pins()['engine_manifest_sha256']})
     installation = json.loads((root() / 'installation.json').read_text())
     if installation['manifest_sha256'] != digest(core.ROOT / 'manifests/strata.json'):
         raise ValueError('Strata recipe changed; run install gyros')
     if installation['model_manifest'] != core.manifest('models')['gyros']:
         raise ValueError('Strata model pins changed; run install gyros')
+    # Start checks sizes only; install and `verify gyros` hash everything (hashing here cost ~2 s, ~23 s with experts.bin).
     for name, artifact in installation['generated'].items():
-        if name.endswith('/experts.bin'):
-            # Hashing 24 GiB took ~21 s per start; `verify gyros` still hashes it, the engine checks its sidecar.
-            if generated_path(name).stat().st_size != artifact['size']:
-                raise ValueError('Gyro experts.bin size mismatch; run verify gyros')
-            continue
-        verify_file(generated_path(name), artifact)
+        if generated_path(name).stat().st_size != artifact['size']:
+            raise ValueError('Size mismatch; run verify gyros: ' + name)
     if (root() / 'models' / p['model']).stat().st_size != core.manifest('models')['gyros'][0]['size']:
         raise ValueError('Full Gyro GGUF size mismatch; run verify gyros')
     if state(p).exists() or core.scope_active(p):

@@ -47,7 +47,7 @@ output hashes. Starting a profile never downloads or prepares missing files.
 Install and `verify` do all hashing. Start checks only that files exist with
 their recorded sizes: prepared outputs against `installation.json`, the GGUF
 against its pin, and engine files against the engine manifest. Hashing at start
-cost about 2.3 s in the launcher and 1.2 s in the Windows owner, or about 21 s more
+cost about 1 s in the launcher and 0.6 s in the Windows owner, or about 21 s more
 with `experts.bin`. The engine signature is checked at install. Run `verify gyros`
 after any doubt about the managed storage.
 
@@ -120,7 +120,7 @@ A cold first request through llama-swap (launcher checks, engine load, answer)
 took 30.6 s, against about 82 s before. Of that, the launcher took 1.9 s before the
 engine scope (1 s of it a connect timeout probing the free backend port), the
 owner's checks 0.6 s, the engine load 21.4 s, and about 5 s passed between engine
-readiness and the answer. Hashing at start had added about 3.5 s (now at install).
+readiness and the answer. Hashing at start had added about 1.6 s (now at install).
 Both first requests right after a fresh `swap start` were slower (41.9 s, and
 once an empty reply after 130 s with no engine started), not yet explained. Both placed
 14,681 experts in VRAM and 12.99 GiB in RAM. Minimum available RAM

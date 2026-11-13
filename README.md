@@ -1,3 +1,22 @@
+# Local inference
+
+Local inference setup optimized for Windows NVidia 5090 laptop setups with 24gb VRAM and 32gb RAM.
+
+Manages everything from within WSL so you don't need to bother with windows.
+
+Supports
+- Llama.cpp and Strata backends, including forks of them.
+- Configuring models for PI and Opencode.
+- Swapping between models using different engines/forks, so you can experiment with new releases.
+- Running inference inside of WSL, or managing the runtime on windows through powershell.
+
+Tested on OMEN MAX 16t-ah000, with latest HP compatible drivers.
+
+Current best model: 
+- https://huggingface.co/agentionai/Qwen3.8-Flash-Next-Gyro-GGUF - TQ1_0 with Strata
+
+AI slop follows.
+
 # Local llama.cpp inference
 
 One WSL/Linux repository for Swift 1.5 IQ3_S MTP and Nemotron 3.5 Bolt E4B DFlash.

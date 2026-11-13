@@ -82,6 +82,21 @@ precedence. llama.cpp cache, batch and loading flags are refused for Strata.
 Without a drafter, the native IQ path still uses its minimum verification buffer;
 prompt-lookup drafting is disabled as well.
 
+## Terminal monitor
+
+With Gyro loaded through llama-swap, open PowerShell and run:
+
+```powershell
+cd C:\AI\llama-local\strata\runtimes\control-0.1.59
+.\python\python.exe -B strata.py monitor --url http://127.0.0.1:1257
+```
+
+Press `q` to quit. Port 1257 is the default Windows backend port; the public
+llama-swap port 1235 does not expose Strata's telemetry endpoint. For a directly
+started Gyro server, use port 1235 by default instead. Match any port overrides
+and replace the directory above if `LLAMA_STRATA_WINDOWS_ROOT` was customized.
+Run the monitor on Windows: the Windows backend may not be reachable from WSL.
+
 ## Loading and expert placement
 
 Gyro-S has 48 layers of 512 experts. The engine places them by the ranking in

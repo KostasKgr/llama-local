@@ -171,6 +171,13 @@ before loading another model. Selecting Gyro gives the proxy a longer readiness
 deadline for its larger model. Manual production-profile start/stop refuses while
 the coordinator owns the machine; use `swap stop` first.
 
+When a proxy forwards requests with a non-local Host header, add the hostname to
+the git-ignored `.env`, for example `LLAMA_STRATA_ALLOWED_HOSTS=inference.example.com`.
+Separate multiple hostnames with commas. Strata continues to accept local hosts;
+the setting adds names to its DNS rebinding protection. Restart the Gyro model to
+apply a change. The generated per-run configuration and its copied logs contain
+the configured names, so treat those files as local data.
+
 Register only Gyro's transport against the local public proxy, preserving the
 shared provider endpoint used by other pi models:
 

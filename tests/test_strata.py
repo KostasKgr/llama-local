@@ -13,6 +13,16 @@ from lib import strata_windows
 
 
 class StrataTests(unittest.TestCase):
+    def test_additional_allowed_hosts(self):
+        p = core.load('gyros')
+        with tempfile.TemporaryDirectory() as temp, patch.object(strata, 'root', return_value=Path(temp)):
+            with patch.object(core, 'load_env_file', return_value={}):
+                self.assertNotIn('allowed_hosts', strata.config(p, Path(temp)))
+            with patch.object(core, 'load_env_file', return_value={
+                    'LLAMA_STRATA_ALLOWED_HOSTS': ' inference.example.com, , second.example.com '}):
+                self.assertEqual(strata.config(p, Path(temp))['allowed_hosts'],
+                                 ['inference.example.com', 'second.example.com'])
+
     def test_backend_overrides_and_no_llama_flags(self):
         p = core.load('gyros')
         with tempfile.TemporaryDirectory() as temp, patch.object(strata, 'root', return_value=Path(temp)):

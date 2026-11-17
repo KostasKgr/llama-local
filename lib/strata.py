@@ -393,7 +393,7 @@ def config(p, run_dir):
     else:
         # Native IQ packs require a >=2-row verify buffer even without a drafter.
         args += ['--spec', '2', '--suffix-draft', '0', '--lookup-max-t', '0']
-    return {'exe': win(engine()), 'args': args, 'cwd': win(control()),
+    result = {'exe': win(engine()), 'args': args, 'cwd': win(control()),
             'lib_dirs': [win(engine().parent)], 'tokenizer': win(pack(p) / 'tokenizer'),
             'model_name': p['alias'], 'host': '127.0.0.1', 'port': p['port'],
             'log': win(run_dir / 'engine.log'), 'parallel': 1, 'engine_ready_s': 900,
@@ -402,6 +402,11 @@ def config(p, run_dir):
                          (['--spec', str(p['draft_max']), '--draft-conf', str(p['draft_conf'])]
                           if p['spec'] != 'none' else []),
             'open_browser': False, 'idle_unload_s': 0}
+    hosts = core.load_env_file().get('LLAMA_STRATA_ALLOWED_HOSTS', '')
+    allowed = [host.strip() for host in hosts.split(',') if host.strip()]
+    if allowed:
+        result['allowed_hosts'] = allowed
+    return result
 
 
 def command(p):

@@ -1,6 +1,6 @@
-# Gyro-S baseline
+# Gyro-S baseline — NVIDIA-SMI 592.27
 
-Current baseline, measured 2026-11-12. It supersedes the
+Baseline measured 2026-11-12 with NVIDIA-SMI 592.27, driver 592.27 and CUDA 13.1. It supersedes the
 [GGUF-in-place baseline](GGUF_IN_PLACE_BASELINE.md), whose machine, runtime
 pins, profile defaults, fixture and agentic method are unchanged here. The only
 change is the pack: `install gyros` now writes `experts.bin`

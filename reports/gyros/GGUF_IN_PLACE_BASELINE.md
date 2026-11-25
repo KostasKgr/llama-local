@@ -1,6 +1,6 @@
 # Gyro-S baseline: GGUF in place (superseded)
 
-Superseded on 2026-11-12 by the [experts.bin baseline](baseline.md): this pack read the
+Superseded on 2026-11-12 by the [experts.bin baseline](BASELINE_NVIDIA_SMI_592.27.md): this pack read the
 experts from the GGUF in place, before `install gyros` wrote `experts.bin`. Settings,
 pins, the synthetic API benchmark and the agentic method below remain the reference
 for what the current baseline does not re-measure.

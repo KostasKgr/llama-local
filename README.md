@@ -25,7 +25,7 @@ CUDA runtimes with bundled DLLs.
 
 The [Strata Gyro-S backend](docs/strata.md) has its own pinned Windows
 runtime, full GGUF and managed storage. It supports text, tools and CPU-encoded
-images and is included in the default llama-swap group. The [Gyro-S baseline](reports/gyros/baseline.md)
+images and is included in the default llama-swap group. The [Gyro-S baseline](reports/gyros/BASELINE_NVIDIA_SMI_592.27.md)
 compares load and real T3 tool-use speed with the superseded
 [GGUF-in-place baseline](reports/gyros/GGUF_IN_PLACE_BASELINE.md). Its pack must include
 `experts.bin` (`iq_pack.py --experts-bin`, written by `install gyros`): loading

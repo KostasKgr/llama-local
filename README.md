@@ -24,8 +24,8 @@ and Ternary Bonsai 2.5 27B MTP. The llama.cpp profiles use pinned Windows-native
 CUDA runtimes with bundled DLLs.
 
 The optional [Strata Gyro-S backend](docs/strata.md) has its own pinned Windows
-runtime, full GGUF and managed storage. It supports text and tools, with explicit
-opt-in to the exclusive llama-swap group. The [Gyro-S baseline](reports/gyros/baseline.md)
+runtime, full GGUF and managed storage. It supports text, tools and CPU-encoded
+images, with explicit opt-in to the exclusive llama-swap group. The [Gyro-S baseline](reports/gyros/baseline.md)
 compares load and real T3 tool-use speed with the superseded
 [GGUF-in-place baseline](reports/gyros/GGUF_IN_PLACE_BASELINE.md). Its pack must include
 `experts.bin` (`iq_pack.py --experts-bin`, written by `install gyros`): loading
@@ -304,8 +304,8 @@ register each profile against the endpoint that serves it.
 output allowance is 16,384 tokens for Bonsai, 16,000 for Swift, and 8,192 for
 other profiles. Context and port honor the profile's environment overrides, with
 CLI arguments taking precedence. These are advertised limits, so launch the
-server with matching overrides. Swift advertises text and image input; other
-profiles advertise text input. The OpenAI chat-completions adapter uses
+server with matching overrides. Swift and Gyro-S advertise text and image input;
+Bolt advertises text input. The OpenAI chat-completions adapter uses
 `max_tokens` and a system role. Swift matches OpenCode's explicit effort presets:
 PI's off/low/medium/xhigh send `reasoning_effort` none/low/medium/xhigh respectively.
 Update an older binary-only registration with `python3 llama.py pi add swift15 --update`.

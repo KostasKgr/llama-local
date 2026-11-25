@@ -20,11 +20,14 @@ import zipfile
 
 from . import core
 
+PROJECTOR = 'gyros/mmproj-Qwen3.8-Flash-Next-BF16.gguf'
 DEFAULT_ROOT = r'C:\AI\llama-local\strata'
 OVERRIDES = {'context', 'port', 'spec', 'draft_max', 'parallel', 'pack'}
 
 
 def validate(p):
+    if p.get('mmproj') != PROJECTOR or p.get('vision_device') != 'cpu':
+        raise ValueError('Strata vision requires the pinned projector and CPU reader')
     scope = p.get('scope', '')
     if scope != 'gyros' and not re.fullmatch(r'gyros-trial-[A-Za-z0-9-]+', scope):
         raise ValueError('Invalid owned Strata scope')
@@ -250,6 +253,16 @@ def isolated_env():
     return env
 
 
+def check_installation_inputs(info):
+    """Allow only the known projector addition to an otherwise identical preparation."""
+    desired = core.manifest('models')['gyros']
+    previous = info['model_manifest']
+    without_projector = [a for a in desired if a['file'] != PROJECTOR]
+    if (info['manifest_sha256'] != digest(core.ROOT / 'manifests/strata.json')
+            or previous not in (desired, without_projector)):
+        raise ValueError('Preparation inputs changed; choose a fresh managed storage directory')
+
+
 def install():
     base = root()
     if (any((base / 'state').glob('gyros*.json')) or running(core.load('gyros'))
@@ -266,6 +279,10 @@ def install():
     (base / 'state').mkdir(parents=True, exist_ok=True)
     with (base / 'state' / 'install.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        previous = base / 'installation.json'
+        old = json.loads(previous.read_text()) if previous.exists() else None
+        if old is not None:
+            check_installation_inputs(old)
         for artifact in pins()['packages']:
             archive = core.fetch(base / 'downloads', artifact)
             target = control() if artifact['file'].endswith('.zip') else engine().parent
@@ -287,12 +304,7 @@ def install():
         for artifact in core.manifest('models')['gyros']:
             core.fetch(base / 'models', artifact, verifier=verify_file)
         fetch_gguf_py()
-        previous = base / 'installation.json'
-        if previous.exists():
-            old = json.loads(previous.read_text())
-            if (old['manifest_sha256'] != digest(core.ROOT / 'manifests/strata.json')
-                    or old['model_manifest'] != core.manifest('models')['gyros']):
-                raise ValueError('Preparation inputs changed; choose a fresh managed storage directory')
+        if old is not None:
             for name, artifact in old['generated'].items():
                 verify_file(generated_path(name), artifact)
         pack = base / 'packs' / 'gyros'
@@ -402,6 +414,10 @@ def config(p, run_dir):
                          (['--spec', str(p['draft_max']), '--draft-conf', str(p['draft_conf'])]
                           if p['spec'] != 'none' else []),
             'open_browser': False, 'idle_unload_s': 0}
+    args.append('--vision')
+    result['vision'] = {'exe': win(engine().parent / 'strata-vision.exe'),
+                        'mmproj': win(base / 'models' / p['mmproj']), 'model': model,
+                        'gpu': False, 'max_tokens': 300}
     hosts = core.load_env_file().get('LLAMA_STRATA_ALLOWED_HOSTS', '')
     allowed = [host.strip() for host in hosts.split(',') if host.strip()]
     if allowed:
@@ -453,7 +469,8 @@ def port_open(port):
 
 def preflight(p):
     for path in (python(), engine(), engine().parent / 'engine-component.json', root() / 'installation.json', pack(p) / 'native_experts.txt',
-                 pack(p) / 'tokenizer/vocab.json', pack(p) / 'experts.bin', root() / 'models' / p['model']):
+                 pack(p) / 'tokenizer/vocab.json', pack(p) / 'experts.bin', root() / 'models' / p['model'],
+                 root() / 'models' / p['mmproj'], engine().parent / 'strata-vision.exe'):
         if not path.is_file():
             raise ValueError('Strata artifact missing; run llama.py install gyros: ' + str(path))
     if p['spec'] == 'dflash2':
@@ -471,6 +488,9 @@ def preflight(p):
             raise ValueError('Size mismatch; run verify gyros: ' + name)
     if (root() / 'models' / p['model']).stat().st_size != core.manifest('models')['gyros'][0]['size']:
         raise ValueError('Full Gyro GGUF size mismatch; run verify gyros')
+    projector = next(a for a in core.manifest('models')['gyros'] if a['file'] == p['mmproj'])
+    if (root() / 'models' / p['mmproj']).stat().st_size != projector['size']:
+        raise ValueError('Projector size mismatch; run verify gyros')
     if state(p).exists() or core.scope_active(p):
         raise ValueError('Strata scope active or cleanup pending; stop its owner first')
     # Linux cannot bind a recently released Windows port under mirrored networking;

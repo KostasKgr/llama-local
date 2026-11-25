@@ -75,9 +75,19 @@ try:
                         'url': 'data:image/png;base64,' + base64.b64encode(png).decode()}},
                     {'type': 'text', 'text': 'What color is this image? Answer with one color word only.'}]}],
                 'max_tokens': 32, 'temperature': 0,
+                **({'reasoning_effort': 'none'} if name == 'gyros' else {}),
                 'chat_template_kwargs': {'enable_thinking': False}})
             record['vision'].append({'expected': color, 'response': response})
             assert color in response['choices'][0]['message']['content'].lower()
+    if name == 'gyros':
+        from lib import strata
+        _, run = strata.owner(p)
+        owner = json.loads((run / 'owner.json').read_text())
+        readers = [child for child in owner['children'] if child
+                   and Path(child['exe'].replace('\\', '/')).name == 'strata-vision.exe']
+        assert len(readers) == 1, 'Expected one owned vision reader'
+        assert '--gpu' not in readers[0]['cmd'], 'Vision reader must use CPU only'
+        record['vision_reader'] = readers[0]
     record['scope'] = subprocess.check_output(['systemctl', '--user', 'show', p['scope'] + '.scope',
         '-p', 'MemoryHigh', '-p', 'MemoryMax', '-p', 'MemorySwapMax'], text=True)
     assert 'MemoryHigh=8589934592' in record['scope'] and 'MemoryMax=9663676416' in record['scope'] and 'MemorySwapMax=0' in record['scope']
@@ -97,5 +107,10 @@ finally:
             process.wait()
         # A following run must not find a Windows server still holding the port and VRAM.
         core.wait_windows_exit(p)
+    if record.get('vision_reader'):
+        reader = record['vision_reader']
+        actual = json.loads(strata.helper('identity', '--pid', str(reader['pid'])).stdout)
+        record['vision_reader_stopped'] = actual is None or actual['created'] != reader['created']
+        assert record['vision_reader_stopped'], 'Owned vision reader survived cleanup'
     (out / 'result.json').write_text(json.dumps(record, indent=2) + '\n')
 print(out)

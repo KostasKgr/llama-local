@@ -13,6 +13,45 @@ from lib import strata_windows
 
 
 class StrataTests(unittest.TestCase):
+    def test_cpu_vision_and_pi_capabilities(self):
+        p = core.load('gyros')
+        with tempfile.TemporaryDirectory() as temp, patch.object(strata, 'root', return_value=Path(temp)):
+            cfg = strata.config(p, Path(temp) / 'runs/test')
+        self.assertIn('--vision', cfg['args'])
+        self.assertFalse(cfg['vision']['gpu'])
+        self.assertEqual(cfg['vision']['max_tokens'], 300)
+        self.assertTrue(cfg['vision']['mmproj'].endswith(p['mmproj'].replace('/', '\\')))
+        self.assertEqual(pi.model_config(p)['input'], ['text', 'image'])
+        for overrides in ({'vision_device': 'gpu'}, {'mmproj': '../other.gguf'}):
+            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                core.load('gyros', overrides)
+
+    def test_projector_only_installation_migration(self):
+        import copy
+        desired = core.manifest('models')['gyros']
+        legacy = [a for a in desired if a['file'] != strata.PROJECTOR]
+        info = {'manifest_sha256': 'same', 'model_manifest': legacy}
+        with patch.object(strata, 'digest', return_value='same'):
+            strata.check_installation_inputs(info)
+            strata.check_installation_inputs({**info, 'model_manifest': desired})
+            changed = copy.deepcopy(legacy)
+            changed[0]['sha256'] = 'changed'
+            for invalid in ({**info, 'manifest_sha256': 'changed'},
+                            {**info, 'model_manifest': changed},
+                            {**info, 'model_manifest': legacy[:-1]},
+                            {**info, 'model_manifest': desired + [{'file': 'unknown'}]}):
+                with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, 'Preparation inputs changed'):
+                    strata.check_installation_inputs(invalid)
+
+    def test_start_requires_projector_and_reader(self):
+        p = core.load('gyros')
+        for missing in (strata.root() / 'models' / p['mmproj'], strata.engine().parent / 'strata-vision.exe'):
+            with patch.object(Path, 'is_file', autospec=True, side_effect=lambda path: path != missing), \
+                    patch.object(strata, 'digest') as digest:
+                with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, 'Strata artifact missing'):
+                    strata.preflight(p)
+                digest.assert_not_called()
+
     def test_additional_allowed_hosts(self):
         p = core.load('gyros')
         with tempfile.TemporaryDirectory() as temp, patch.object(strata, 'root', return_value=Path(temp)):
@@ -64,7 +103,8 @@ class StrataTests(unittest.TestCase):
             p = core.load('gyros')
             for path in (strata.python(), strata.engine(), strata.engine().parent / 'engine-component.json',
                          Path(temp) / 'installation.json', strata.pack(p) / 'native_experts.txt', strata.pack(p) / 'tokenizer/vocab.json',
-                         Path(temp) / 'models' / p['model']):
+                         Path(temp) / 'models' / p['model'], Path(temp) / 'models' / p['mmproj'],
+                         strata.engine().parent / 'strata-vision.exe'):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('x')
             with self.assertRaisesRegex(ValueError, 'experts.bin'):
@@ -75,7 +115,8 @@ class StrataTests(unittest.TestCase):
             p = core.load('gyros', {'spec': 'none'})
             for path in (strata.python(), strata.engine(), strata.engine().parent / 'engine-component.json',
                          strata.pack(p) / 'native_experts.txt', strata.pack(p) / 'tokenizer/vocab.json',
-                         Path(temp) / 'models' / p['model']):
+                         Path(temp) / 'models' / p['model'], Path(temp) / 'models' / p['mmproj'],
+                         strata.engine().parent / 'strata-vision.exe'):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text('x')
             (strata.pack(p) / 'experts.bin').write_bytes(b'1234')

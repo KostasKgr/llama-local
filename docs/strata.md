@@ -1,6 +1,6 @@
 # Strata Gyro-S
 
-The `gyros` profile serves text and tools with Strata on Windows. Its runtime,
+The `gyros` profile serves text, tools and CPU-encoded images with Strata on Windows. Its runtime,
 full GGUF, prepared pack and drafter live in separate managed Windows storage.
 It does not use an existing Strata application installation.
 
@@ -8,6 +8,46 @@ Runtime and preparation pins live in `manifests/strata.json`; model sources live
 in `manifests/models.json`. Defaults and the client alias live in
 `profiles/gyros.json`. Installing this profile leaves the llama.cpp profiles and
 their runtime files intact.
+
+## CPU vision
+
+The existing profile loads `mmproj-Qwen3.8-Flash-Next-BF16.gguf` through the
+bundled `strata-vision.exe`, explicitly configured with `gpu: false` and a
+300-image-token limit. Only image encoding runs on the CPU; language inference
+and DFlash2 remain on the GPU. The runtime pins, 128K context, expert-cache policy
+and 1536 MiB VRAM reserve are unchanged. CPU encoding uses host RAM and CPU time;
+image tokens also consume conversation context. This is not a full-context or
+large-image capacity guarantee.
+
+The 907,543,008-byte projector is pinned to the ISTA-DASLab repository revision
+and SHA-256 in `manifests/models.json`. `install gyros` can add this artifact to
+an existing preparation without rebuilding the pack or drafter; changes to the
+previous preparation inputs still require separate storage. Start refuses a
+missing projector or reader, and `verify gyros` checks the projector hash.
+
+After stopping the managed server, install and verify as below, then restart
+its normal launcher. Update the existing pi model with
+`python3 llama.py pi add gyros --update` (preserve an existing custom model
+endpoint with `--model-base-url URL`). The alias stays
+`llama-local/qwen3.8-flash-next-gyro-s-strata`. Registration creates a backup and
+does not change pi's default model or thinking settings. Restart existing pi
+sessions to reload model capabilities.
+
+`python3 llama.py smoke gyros` checks API images as well as text/tools and owns
+its trial server. Against the running backend, `experiments/pi_smoke.py gyros`
+checks pi discovery, streaming, reasoning, tools and red/blue image attachments.
+Run live checks sequentially and use the matching backend health URL/port when
+serving through llama-swap. Vision-reader children share the Windows owner's job.
+
+Validated on 2026-11-20 with the pinned 0.1.59 runtime: all 120 verification
+checks and full artifact verification passed. The API smoke recognized red and
+blue images, confirmed the reader ran without `--gpu`, and confirmed its process
+exited during owned cleanup. The reader log reported CPU encoding on 12 threads.
+The pi smoke passed discovery, streaming, thinking, the read-tool round trip and
+both attached images through the configured external endpoint. An earlier pi
+run copied only part of the tool's random token; the unchanged retry passed.
+These checks establish short-image operation, not OCR/grounding quality or
+large-image capacity. The existing llama-swap profile group was restored.
 
 ## Install and verify
 

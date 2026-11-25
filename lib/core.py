@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 WINDOWS_ROOT = r'C:\AI\llama-local'
 PROFILES = {'swift15': ('SWIFT', 'draft-mtp'),
             'bolt35': ('BOLT35', 'draft-dflash'),
+            'bonsai25': ('BONSAI25', 'draft-mtp'),
             'gyros': ('GYROS', 'dflash2')}
 def boolean(value):
     if isinstance(value, bool):

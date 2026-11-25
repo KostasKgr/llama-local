@@ -95,9 +95,11 @@ def run(name, port=None, context=None, timeout=180, base_url=None, health_url=No
                 return result.stdout
 
             record['pi_version'] = execute('version', ['pi', '--version']).strip()
+            smoke_tokens = 4096 if name == 'bonsai25' else 1024
             execute('register', [sys.executable, str(core.ROOT / 'llama.py'), 'pi', 'add', name,
                                 '--config', str(agent / 'models.json'), '--port', str(profile['port']),
-                                '--context', str(profile['context']), '--output-tokens', str(min(1024, profile['context'])),
+                                '--context', str(profile['context']), '--output-tokens',
+                                str(min(smoke_tokens, profile['context'])),
                                 '--model-base-url', inference])
             common = ['pi', '--offline', '--no-approve', '--no-session', '--no-mcp', '--no-extensions',
                       '--no-skills', '--no-prompt-templates', '--no-context-files', '--no-themes']
@@ -108,7 +110,7 @@ def run(name, port=None, context=None, timeout=180, base_url=None, health_url=No
 
             def case(label, prompt, expected, thinking=False, tool=False, attachment=None):
                 command = common + ['--provider', pi.PROVIDER, '--model', profile['alias'],
-                                    '--thinking', 'high' if thinking else 'off', '--mode', 'json', '--print']
+                                    '--thinking', thinking or 'off', '--mode', 'json', '--print']
                 command += ['--tools', 'read'] if tool else ['--no-tools']
                 if attachment:
                     command.append('@' + str(attachment))
@@ -117,12 +119,13 @@ def run(name, port=None, context=None, timeout=180, base_url=None, health_url=No
                 message = assistant_message(events)
                 if message.get('provider') != pi.PROVIDER or message.get('model') != profile['alias']:
                     raise ValueError('PI used a different provider or model')
-                check_case(events, expected, thinking, tool)
+                check_case(events, expected, bool(thinking), tool)
                 record['checks'][label] = True
 
             case('text', 'Reply with exactly these two words and nothing else: hello world', 'hello world')
             if pi.model_config(profile)['reasoning']:
-                case('thinking', 'What is 17 multiplied by 23? Reply with only the integer.', '391', thinking=True)
+                effort = 'xhigh' if name == 'bonsai25' else 'high'
+                case('thinking', 'What is 17 multiplied by 23? Reply with only the integer.', '391', thinking=effort)
             token = 'PI_' + uuid.uuid4().hex
             (work / 'pi-fixture.txt').write_text(token + '\n')
             case('tool', 'Use the read tool to read pi-fixture.txt. Reply with exactly its contents '

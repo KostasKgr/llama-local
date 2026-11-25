@@ -54,6 +54,9 @@ try:
     if name == 'gyros':
         from experiments.strata_benchmark import validate_api
         record['strata_api'] = validate_api(base, p['alias'])
+    if name == 'bonsai25':
+        from experiments.bonsai_probe import validate_api
+        record['bonsai_api'] = validate_api(base, p['alias'], p['spec'])
     if p.get('mmproj'):
         # Generate two solid PNGs locally: no external image dependency or download.
         def chunk(kind, data):

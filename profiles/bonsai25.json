@@ -1,0 +1,47 @@
+{
+  "runtime": "win-prism-b12178-03ec600-cuda13.3",
+  "platform": "windows",
+  "model": "bonsai25/Ternary-Bonsai-2.5-27B-PTQ1_0-mtp.gguf",
+  "context": 262144,
+  "parallel": 1,
+  "kv_unified": false,
+  "batch": 2048,
+  "ubatch": 512,
+  "cache_k": "q8_0",
+  "cache_v": "q8_0",
+  "spec": "draft-mtp",
+  "draft_max": 3,
+  "draft_p_min": 0.1,
+  "alias": "ternary-bonsai-2.5-27b-ptq1-mtp",
+  "load_mode": "dio",
+  "port": 1235,
+  "scope": "bonsai25",
+  "fit_off": true,
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 20,
+    "min_p": 0.0,
+    "presence_penalty": 0.0,
+    "repeat_penalty": 1.0
+  },
+  "opencode": {
+    "name": "Ternary Bonsai 2.5 27B PTQ1_0 MTP",
+    "output_tokens": 16384,
+    "reasoning": true,
+    "temperature": true,
+    "tool_call": true,
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "options": {
+      "reasoningEffort": "xhigh"
+    },
+    "variants": {
+      "none": {"reasoningEffort": "none"},
+      "medium": {"reasoningEffort": "medium"},
+      "xhigh": {"reasoningEffort": "xhigh"}
+    }
+  }
+}

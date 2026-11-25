@@ -13,7 +13,7 @@ import uuid
 
 from . import core
 
-PROFILES = ('bolt35', 'swift15')
+PROFILES = ('bolt35', 'swift15', 'bonsai25')
 UNIT = 'llama-local-swap.service'
 
 

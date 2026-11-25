@@ -81,6 +81,20 @@ class CoreTests(unittest.TestCase):
             available.remove(models / p['draft'])
             core.preflight(core.load('bolt35', {'spec': 'none'}))
 
+    def test_bonsai_uses_embedded_mtp_and_respects_context_override(self):
+        profile = core.load('bonsai25')
+        args = core.command(profile)
+        self.assertEqual(profile['platform'], 'windows')
+        self.assertIn('win-prism-b12178-03ec600-cuda13.3', args[0])
+        for flag, value in {'-np': '1', '--spec-type': 'draft-mtp', '--spec-draft-n-max': '3',
+                            '--spec-draft-p-min': '0.1', '--min-p': '0.0'}.items():
+            self.assertEqual(args[args.index(flag) + 1], value)
+        self.assertNotIn('-md', args)
+        with patch.dict('os.environ', {'BONSAI25_CONTEXT': '196608'}):
+            plain = core.command(core.load('bonsai25', {'spec': 'none'}))
+        self.assertEqual(plain[plain.index('-c') + 1], '196608')
+        self.assertNotIn('--spec-draft-n-max', plain)
+        self.assertNotIn('--spec-draft-p-min', plain)
 
     def test_start_captures_both_streams_and_preserves_failure(self):
         with tempfile.TemporaryDirectory() as temp:

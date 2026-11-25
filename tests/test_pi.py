@@ -29,11 +29,17 @@ class PiRegistrationTests(unittest.TestCase):
                 self.assertEqual(models[alias], model)
             model = models[profile['alias']]
             self.assertEqual(model['contextWindow'], profile['context'])
-            self.assertEqual(model['maxTokens'], 16000 if name == 'swift15' else 8192)
+            self.assertEqual(model['maxTokens'], profile['opencode']['output_tokens'])
             self.assertEqual(model['input'], profile['opencode']['modalities']['input'])
             self.assertEqual(pi.merge(result, profile), result)
             previous = copy.deepcopy(models)
             source = result
+
+    def test_bonsai_exposes_supported_reasoning_efforts(self):
+        model = pi.model_config(core.load('bonsai25'))
+        self.assertTrue(model['compat']['supportsReasoningEffort'])
+        self.assertEqual({level: value for level, value in model['thinkingLevelMap'].items() if value},
+                         {'off': 'none', 'medium': 'medium', 'xhigh': 'xhigh'})
 
     def test_models_array_pretty_printed(self):
         result = pi.merge('{}\n', core.load('bolt35'))

@@ -28,7 +28,8 @@ tasks:
       - bash -n start_swift15_iq3s_128k.sh start_bolt35.sh
 
   profile-config:
-    desc: Validate the Strata CLI and optional proxy configuration without starting processes.
+    desc: Validate the profile CLI and proxy configuration without starting processes.
     cmds:
       - python3 llama.py start gyros --dry-run > /dev/null
-      - python3 llama.py swap config --profiles bolt35 swift15 gyros > /dev/null
+      - python3 llama.py start bonsai25 --dry-run > /dev/null
+      - python3 llama.py swap config --profiles bolt35 swift15 bonsai25 gyros > /dev/null

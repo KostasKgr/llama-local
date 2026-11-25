@@ -111,6 +111,20 @@
       "size": 423535356
     }
   ],
+  "win-prism-b12178-03ec600-cuda13.3": [
+    {
+      "file": "llama-prism-b12178-03ec600-bin-win-cuda-13.3-x64.zip",
+      "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12178-03ec600/llama-prism-b12178-03ec600-bin-win-cuda-13.3-x64.zip",
+      "sha256": "a34bdb817e797243f86c5e2dd1bdf118d17ea32b6eaa4e6f32c41533b13bc2d8",
+      "size": 216516289
+    },
+    {
+      "file": "cudart-llama-bin-win-cuda-13.3-x64.zip",
+      "url": "https://github.com/PrismML-Eng/llama.cpp/releases/download/prism-b12178-03ec600/cudart-llama-bin-win-cuda-13.3-x64.zip",
+      "sha256": "1462a050eb4c684921ba51dcc4cc488a036674c3e73e9945ee705b854808d03e",
+      "size": 390970417
+    }
+  ],
   "win-b12110-cuda13.4": [
     {
       "file": "llama-b12110-bin-win-cuda-13.4-x64.zip",

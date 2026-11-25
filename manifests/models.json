@@ -27,6 +27,14 @@
       "size": 736812096
     }
   ],
+  "bonsai25": [
+    {
+      "file": "bonsai25/Ternary-Bonsai-2.5-27B-PTQ1_0-mtp.gguf",
+      "url": "https://huggingface.co/prism-ml/Ternary-Bonsai-2.5-27B-GGUF/resolve/28a7093cc25bc151cc2b284c5570f12ce343fdcf/Ternary-Bonsai-2.5-27B-PTQ1_0-mtp.gguf",
+      "sha256": "e0fc5f3d47b9c926d52677d303b19df356a2376614b3e1cb9973865fc04ca431",
+      "size": 6232818944
+    }
+  ],
   "gyros": [
     {
       "file": "gyros/Qwen3.8-Flash-Next-Gyro-S-TQ1_0.gguf",

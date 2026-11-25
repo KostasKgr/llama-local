@@ -197,7 +197,8 @@ class StrataTests(unittest.TestCase):
             p = core.load('gyros')
             with self.assertRaisesRegex(RuntimeError, 'exec reached'):
                 strata.start(p)
-        self.assertEqual([call.args[0]['scope'] for call in wait.call_args_list], ['bolt35', 'swift15'])
+        self.assertEqual([call.args[0]['scope'] for call in wait.call_args_list],
+                         ['bolt35', 'swift15', 'bonsai25'])
 
     def test_wrong_ownership_token_refused(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(strata, 'root', return_value=Path(temp)):
@@ -210,7 +211,8 @@ class StrataTests(unittest.TestCase):
     def test_optional_swap_preserves_default_and_uses_one_exclusive_group(self):
         default = json.loads(swap.config())
         extended = json.loads(swap.config(1235, 1236, 1257, ['bolt35', 'swift15', 'gyros']))
-        self.assertEqual(len(default['models']), 2)
+        self.assertIn(core.load('bonsai25')['alias'], default['models'])
+        self.assertNotIn(core.load('gyros')['alias'], default['models'])
         self.assertEqual(default['healthCheckTimeout'], 300)
         self.assertEqual(len(extended['models']), 3)
         self.assertEqual(extended['healthCheckTimeout'], 960)

@@ -19,9 +19,9 @@ AI slop follows.
 
 # Local llama.cpp inference
 
-One WSL/Linux repository for Swift 1.5 IQ3_S MTP and Nemotron 3.5 Bolt E4B DFlash.
-Both profiles use a pinned Windows-native llama.cpp runtime with CUDA 13.4.
-No source build, CUDA toolkit installation, or driver changes are required.
+One WSL/Linux repository for Swift 1.5 IQ3_S MTP, Nemotron 3.5 Bolt E4B DFlash,
+and Ternary Bonsai 2.5 27B MTP. The llama.cpp profiles use pinned Windows-native
+CUDA runtimes with bundled DLLs.
 
 The optional [Strata Gyro-S backend](docs/strata.md) has its own pinned Windows
 runtime, full GGUF and managed storage. It supports text and tools, with explicit
@@ -60,6 +60,7 @@ registration are available through the explicit commands below.
 | --- | --- | ---: | --- | --- | --- |
 | swift15 | b12110 CUDA 13.4, Windows-native | 131072 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
 | bolt35 | b12110 CUDA 13.4, Windows-native | 65536 | f16/f16 | 2048/512 | separate DFlash, max 7 |
+| bonsai25 | PrismML b12178 CUDA 13.3, Windows-native | 262144 | q8_0/q8_0 | 2048/512 | embedded MTP, max 3 |
 
 The llama.cpp profiles use full layer offload, Flash Attention, Direct I/O loading,
 two checkpoints and 2 GiB RAM prompt cache, except Swift's twenty checkpoints and 10 GiB
@@ -299,8 +300,9 @@ URL applies to every model under the shared `llama-local` provider, so
 register each profile against the endpoint that serves it.
 
 `--config PATH`, `--dry-run`, `--update`, `--context`, `--port`, and
-`--output-tokens` follow the OpenCode registration semantics above. Output defaults
-to 16000 tokens for Swift and 8192 for other profiles; context and port honor the profile's environment overrides, with
+`--output-tokens` follow the OpenCode registration semantics above. The default
+output allowance is 16,384 tokens for Bonsai, 16,000 for Swift, and 8,192 for
+other profiles. Context and port honor the profile's environment overrides, with
 CLI arguments taking precedence. These are advertised limits, so launch the
 server with matching overrides. Swift advertises text and image input; other
 profiles advertise text input. The OpenAI chat-completions adapter uses
@@ -364,10 +366,38 @@ request returned exactly `hello world`. Its evidence is in ignored
 Only uniquely owned Bolt trial scopes were started and stopped. No runtime pins
 or profile defaults changed.
 
-## On-demand Bolt and Swift with llama-swap
+## Ternary Bonsai 2.5 27B
 
-By default, the optional coordinator exposes the existing Bolt and Swift aliases at
-`http://127.0.0.1:1235/v1`. Both run natively on Windows behind private port 1257;
+The text-only `bonsai25` profile uses PrismML's 6.23 GB
+`Ternary-Bonsai-2.5-27B-PTQ1_0-mtp.gguf` and the Windows x64 CUDA 13.3
+build of its llama.cpp fork. It uses one slot, embedded MTP, and a 16,384-token
+output allowance within the configured context. PI and OpenCode expose thinking
+off, medium, and xhigh. See the [model card](https://huggingface.co/prism-ml/Ternary-Bonsai-2.5-27B-GGUF)
+and [pinned runtime release](https://github.com/PrismML-Eng/llama.cpp/releases/tag/prism-b12178-03ec600).
+
+```bash
+python3 llama.py install bonsai25
+python3 llama.py verify bonsai25
+python3 llama.py start bonsai25 --dry-run
+python3 llama.py pi add bonsai25 --model-base-url http://127.0.0.1:1235/v1
+```
+
+Select `llama-local/ternary-bonsai-2.5-27b-ptq1-mtp` in PI. If 256K exceeds
+available memory, set `BONSAI25_CONTEXT=196608` before starting swap and match
+PI's advertised context with
+`python3 llama.py pi add bonsai25 --context 196608 --update --model-base-url http://127.0.0.1:1235/v1`.
+
+Validated on 2026-11-25 on the 24 GB RTX 5090 Laptop GPU. Through llama-swap,
+Bonsai recalled two codes from a 245,610-token prompt and completed generation
+with 466 of 600 MTP draft tokens accepted. Sampled whole-GPU usage reached
+20,989 MiB during the request, including a game that was closed during prefill.
+The Swift → Bonsai → Bolt → Swift switch and the PI text, xhigh and read-tool
+smoke all passed. Raw results are under ignored `logs/swap/` and `logs/bonsai25/`.
+
+## On-demand serving with llama-swap
+
+By default, the optional coordinator exposes Bolt, Swift and Bonsai at
+`http://127.0.0.1:1235/v1`. They run natively on Windows behind private port 1257;
 port 1236 remains for WSL backends. Only one model runs at a time: switching stops
 the current backend before starting the next.
 Other profiles remain available for manual launching and are not listed by swap.
@@ -387,7 +417,8 @@ python3 llama.py swap stop
 [release](https://github.com/mostlygeek/llama-swap/releases/tag/v267), pinned by
 size and SHA-256 in `manifests/llama-swap.json`. Archives and the installed binary
 stay in ignored `downloads/` and `runtimes/`. It does not install model artifacts;
-install and verify `bolt35` and `swift15` separately using the existing commands.
+install and verify `bolt35`, `swift15`, and `bonsai25` separately using the existing
+commands. To start with only a subset, pass the installed profile names to `--profiles`.
 
 `config` prints the resolved YAML using JSON syntax (valid YAML), without writing
 anything or starting a server. `config` and `start` accept `--port`,
@@ -408,7 +439,7 @@ systemd manager and the installed artifacts.
 `start` launches a transient user service, `llama-local-swap.service`, and prints
 the coordinator log path. Startup is asynchronous; use `status`, `/health` and
 the log to check readiness. The first inference request loads its requested model.
-`/v1/models` lists both aliases even before they are loaded. Existing OpenCode and
+`/v1/models` lists the selected aliases even before they are loaded. Existing OpenCode and
 PI entries for those aliases need no change when using the default public port.
 Other previously registered models are not served by this endpoint.
 
@@ -418,10 +449,10 @@ coordinator adds `/usr/lib/wsl/lib` to its subprocess PATH when that directory
 exists, allowing GPU monitoring to find `nvidia-smi`. Existing PATH entries keep
 their precedence. Launcher changes take effect on the next coordinator start.
 
-The existing `bolt35.scope` and `swift15.scope` names are reused. Startup refuses
-occupied public/backend ports, either active profile scope, another coordinator
+Each production scope is named after its profile. Startup refuses
+occupied public/backend ports, an active selected profile scope, another coordinator
 or pending cleanup. During coordinator ownership, ordinary manual start/stop of
-these two production profiles refuses; use `swap stop` before manual operation.
+production profiles refuses. Use `swap stop` before manual operation.
 Startup never stops a pre-existing server. Other-model launchers are not a global
 GPU scheduler; do not start competing GPU workloads while using swap.
 
@@ -435,7 +466,7 @@ not automatically restart. Roll back by running `swap stop` and using the existi
 manual launch commands.
 
 Generated config, coordinator logs and ownership state live under ignored
-`logs/swap/`. Model server logs remain under `logs/bolt35/` and `logs/swift15/`.
+`logs/swap/`. Model server logs remain under `logs/<profile>/`.
 Keep the active ownership marker and lock file intact while the coordinator runs.
 Model switches reload weights and discard backend in-memory prompt/KV caches;
 clients must allow for cold-load latency. Loading uses a 300-second readiness
@@ -457,14 +488,17 @@ When the GPU and both ports are free, run sequentially:
 ```bash
 python3 llama.py smoke bolt35
 python3 llama.py smoke swift15
-python3 experiments/swap_smoke.py
+python3 llama.py smoke bonsai25
+python3 experiments/swap_smoke.py --profiles swift15 bonsai25 bolt35 --bonsai-long-context
 ```
 
-The swap smoke refuses an active coordinator or more than 2 GiB of GPU use. It
-uses unique trial scopes, checks both aliases before loading, Bolt/Swift/Bolt
-switches, one active backend and scope memory limits, Swift red/blue image input,
-and Bolt's existing thinking, streaming and tool-round-trip checks through the
-proxy. It records request durations including loading (not isolated load times)
+The swap smoke refuses an active coordinator or more than 2 GiB of baseline GPU
+use. It uses unique trial scopes, checks all selected aliases
+before loading, and verifies one active backend at a time. It checks Swift image
+input, Bolt's tool round trip, and Bonsai structured tool calls and MTP
+acceptance. The optional long-context probe reserves the output allowance and
+requires recall near both ends of the supplied prompt with MTP still accepting
+tokens. It records request durations that include model loading
 and cleans up only its trial scopes. Results live in ignored `logs/swap/smoke-*/`.
 It does not exercise the production coordinator service or full-context quality.
 
@@ -675,6 +709,29 @@ For Bolt use `--profile bolt35`, `thinking` = `high` and `--max-context 57344`, 
 compacts its 64K window at 57392 tokens. T3 reports `completed` even when Bolt's first
 turn wrote a tool call as text and stopped, so check the PI session for tool calls and
 all five file reads before counting a run. See `reports/bolt35/BASELINE.md`.
+
+For Bonsai use `--profile bonsai25`, model
+`llama-local/ternary-bonsai-2.5-27b-ptq1-mtp`, and `thinking` = `xhigh` with the
+same fixture and prompt. Run two fresh T3 threads sequentially. Use the 98,304-token
+prompt cutoff for comparison with Swift and audit the five file reads and the final
+citations. Use the swap smoke's `--bonsai-long-context` probe to check capacity
+near Bonsai's configured context limit.
+
+The two 2026-11-25 T3 runs used PI xhigh through llama-swap with the 256K profile
+and MTP enabled. The initial warm-up request took 5.9 seconds in each run.
+The table includes completed requests up to the 98,304-token reporting cutoff.
+
+| Run | Requests | Max scored prompt | Prefill (tok/s) | Decode (tok/s) | Draft acceptance | Required files fully read |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 45 | 97,996 | 919.0 | 115.3 | 65.45% | 3 of 5 |
+| 2 | 31 | 98,034 | 944.1 | 111.3 | 65.88% | 4 of 5 |
+
+Both threads crossed the cutoff with the investigation incomplete. Run 1 was
+interrupted after several further requests. Run 2 was interrupted on the first
+request above the cutoff. The fixture was unchanged in both runs. The sampled
+whole-GPU peak was about 18.1 GiB, and the server's peak Windows working set
+was about 2.6 GiB. Raw timings and the read audit are under ignored
+`logs/bonsai25/agentic-*-t3-xhigh-0[12]/`.
 
 ### Concurrent agent slot test
 

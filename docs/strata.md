@@ -157,12 +157,12 @@ inventory trial packs; copy the installed pack's files to make one.
 
 ## llama-swap and pi
 
-The default coordinator selection remains Bolt and Swift. Enable Gyro explicitly
+The default coordinator selects Bolt, Swift, and Bonsai. Enable Gyro explicitly
 after installing all selected profiles, with no other server using the GPU or ports:
 
 ```bash
-python3 llama.py swap config --profiles bolt35 swift15 gyros
-python3 llama.py swap start --profiles bolt35 swift15 gyros
+python3 llama.py swap config --profiles bolt35 swift15 bonsai25 gyros
+python3 llama.py swap start --profiles bolt35 swift15 bonsai25 gyros
 python3 llama.py swap status
 ```
 

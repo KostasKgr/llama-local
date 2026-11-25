@@ -16,6 +16,7 @@ from urllib.request import urlopen
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from lib import core, probes, swap
 from experiments.bolt_benchmark import validate
+from experiments.bonsai_probe import validate_api, validate_context
 from experiments.pi_smoke import solid_png
 
 
@@ -23,7 +24,8 @@ def interrupted(signum, frame):
     raise KeyboardInterrupt
 
 
-def run(port=1235, backend_port=1236, windows_backend_port=1257, profiles=None):
+def run(port=1235, backend_port=1236, windows_backend_port=1257, profiles=None, *,
+        bonsai_long_context=False):
     swap.ports(port, backend_port, windows_backend_port)
     if swap.managed() or swap.service_state() not in ('inactive', 'failed'):
         raise ValueError('llama-swap is active; leave its owner running')
@@ -32,6 +34,8 @@ def run(port=1235, backend_port=1236, windows_backend_port=1257, profiles=None):
     if not os.access(swap.binary(), os.X_OK):
         raise ValueError('Run python3 llama.py swap install first')
     names = swap.selected(profiles)
+    if bonsai_long_context and 'bonsai25' not in names:
+        raise ValueError('The long-context probe requires bonsai25 in the swap profiles')
     swap.preflight(port, backend_port, windows_backend_port, profiles)
     # A Windows server may have just released the public port (see core.wait_port).
     core.wait_port(port)
@@ -87,6 +91,13 @@ def run(port=1235, backend_port=1236, windows_backend_port=1257, profiles=None):
                 assert 'MemorySwapMax=0' in limits
                 record['switches'].append({'profile': name, 'request_seconds': time.monotonic() - started,
                                            'response': response, 'scope_limits': limits})
+                if name == 'bonsai25' and 'bonsai_api' not in record:
+                    profile = core.load(name)
+                    record['bonsai_api'] = validate_api(base, aliases[name], profile['spec'])
+                    if bonsai_long_context:
+                        backend = config['models'][aliases[name]]['proxy']
+                        record['bonsai_context'] = validate_context(base, backend, profile)
+                        record['bonsai_context']['gpu_after'] = probes.gpu()
                 if name == 'swift15':
                     record['vision'] = []
                     for color, rgb in [('red', b'\xff\x00\x00'), ('blue', b'\x00\x00\xff')]:
@@ -140,9 +151,11 @@ def main():
     parser.add_argument('--backend-port', type=int, default=1236)
     parser.add_argument('--windows-backend-port', type=int, default=1257)
     parser.add_argument('--profiles', nargs='+', choices=core.PROFILES)
+    parser.add_argument('--bonsai-long-context', action='store_true')
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, interrupted)
-    run(args.port, args.backend_port, args.windows_backend_port, args.profiles)
+    run(args.port, args.backend_port, args.windows_backend_port, args.profiles,
+        bonsai_long_context=args.bonsai_long_context)
 
 
 if __name__ == '__main__':

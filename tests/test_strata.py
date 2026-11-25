@@ -249,16 +249,18 @@ class StrataTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 strata.stop(p)
 
-    def test_optional_swap_preserves_default_and_uses_one_exclusive_group(self):
-        default = json.loads(swap.config())
-        extended = json.loads(swap.config(1235, 1236, 1257, ['bolt35', 'swift15', 'gyros']))
-        self.assertIn(core.load('bonsai25')['alias'], default['models'])
-        self.assertNotIn(core.load('gyros')['alias'], default['models'])
-        self.assertEqual(default['healthCheckTimeout'], 300)
-        self.assertEqual(len(extended['models']), 3)
-        self.assertEqual(extended['healthCheckTimeout'], 960)
-        self.assertTrue(extended['groups']['local']['exclusive'])
-        self.assertEqual({m['proxy'] for m in extended['models'].values()}, {'http://127.0.0.1:1257'})
+    def test_default_swap_includes_gyros_in_one_exclusive_group(self):
+        default = json.loads(swap.config(1235, 1236, 1257))
+        without_gyros = json.loads(swap.config(profiles=['bolt35', 'swift15', 'bonsai25']))
+        gyros_alias = core.load('gyros')['alias']
+        self.assertEqual(set(default['models']), set(without_gyros['models']) | {gyros_alias})
+        self.assertNotIn(gyros_alias, without_gyros['models'])
+        self.assertEqual(default['healthCheckTimeout'], 960)
+        self.assertEqual(default['unloadTimeout'], 90)
+        self.assertEqual(without_gyros['healthCheckTimeout'], 300)
+        self.assertEqual(without_gyros['unloadTimeout'], 40)
+        self.assertTrue(default['groups']['local']['exclusive'])
+        self.assertEqual({m['proxy'] for m in default['models'].values()}, {'http://127.0.0.1:1257'})
         for names in ([], ['gyros', 'gyros'], ['unknown']):
             with self.assertRaises(ValueError):
                 swap.config(profiles=names)

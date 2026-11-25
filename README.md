@@ -23,9 +23,9 @@ One WSL/Linux repository for Swift 1.5 IQ3_S MTP, Nemotron 3.5 Bolt E4B DFlash,
 and Ternary Bonsai 2.5 27B MTP. The llama.cpp profiles use pinned Windows-native
 CUDA runtimes with bundled DLLs.
 
-The optional [Strata Gyro-S backend](docs/strata.md) has its own pinned Windows
+The [Strata Gyro-S backend](docs/strata.md) has its own pinned Windows
 runtime, full GGUF and managed storage. It supports text, tools and CPU-encoded
-images, with explicit opt-in to the exclusive llama-swap group. The [Gyro-S baseline](reports/gyros/baseline.md)
+images and is included in the default llama-swap group. The [Gyro-S baseline](reports/gyros/baseline.md)
 compares load and real T3 tool-use speed with the superseded
 [GGUF-in-place baseline](reports/gyros/GGUF_IN_PLACE_BASELINE.md). Its pack must include
 `experts.bin` (`iq_pack.py --experts-bin`, written by `install gyros`): loading
@@ -396,12 +396,10 @@ smoke all passed. Raw results are under ignored `logs/swap/` and `logs/bonsai25/
 
 ## On-demand serving with llama-swap
 
-By default, the optional coordinator exposes Bolt, Swift and Bonsai at
+By default, the optional coordinator exposes Bolt, Swift, Bonsai and Gyro-S at
 `http://127.0.0.1:1235/v1`. They run natively on Windows behind private port 1257;
 port 1236 remains for WSL backends. Only one model runs at a time: switching stops
 the current backend before starting the next.
-Other profiles remain available for manual launching and are not listed by swap.
-Strata can be selected explicitly as described in [its operating guide](docs/strata.md).
 The coordinator does not load models at startup or unload them on an idle timer.
 
 ```bash
@@ -417,8 +415,9 @@ python3 llama.py swap stop
 [release](https://github.com/mostlygeek/llama-swap/releases/tag/v267), pinned by
 size and SHA-256 in `manifests/llama-swap.json`. Archives and the installed binary
 stay in ignored `downloads/` and `runtimes/`. It does not install model artifacts;
-install and verify `bolt35`, `swift15`, and `bonsai25` separately using the existing
-commands. To start with only a subset, pass the installed profile names to `--profiles`.
+install and verify `bolt35`, `swift15`, `bonsai25`, and `gyros` separately using the
+existing commands. To start with only a subset, pass the installed profile names
+to `--profiles`.
 
 `config` prints the resolved YAML using JSON syntax (valid YAML), without writing
 anything or starting a server. `config` and `start` accept `--port`,
@@ -469,8 +468,9 @@ Generated config, coordinator logs and ownership state live under ignored
 `logs/swap/`. Model server logs remain under `logs/<profile>/`.
 Keep the active ownership marker and lock file intact while the coordinator runs.
 Model switches reload weights and discard backend in-memory prompt/KV caches;
-clients must allow for cold-load latency. Loading uses a 300-second readiness
-timeout and unloading a 40-second graceful timeout. The pinned proxy scheduler
+clients must allow for cold-load latency. The default group uses a 960-second
+readiness timeout and a 90-second graceful unload timeout. A selection without
+Gyro-S uses 300 and 40 seconds respectively. The pinned proxy scheduler
 waits for active requests before swapping and may batch requests for the current
 model to reduce switching. No additional request concurrency cap is imposed;
 the model profiles retain their single-slot configuration.
@@ -489,7 +489,8 @@ When the GPU and both ports are free, run sequentially:
 python3 llama.py smoke bolt35
 python3 llama.py smoke swift15
 python3 llama.py smoke bonsai25
-python3 experiments/swap_smoke.py --profiles swift15 bonsai25 bolt35 --bonsai-long-context
+python3 llama.py smoke gyros
+python3 experiments/swap_smoke.py --bonsai-long-context
 ```
 
 The swap smoke refuses an active coordinator or more than 2 GiB of baseline GPU

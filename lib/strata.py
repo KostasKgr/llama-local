@@ -505,7 +505,8 @@ def start(p):
     if os.environ.get('LLAMA_STRATA_IN_SCOPE') != '1':
         if os.environ.get('LLAMA_SWAP_MANAGED') == '1':
             for name in swap.PROFILES:
-                core.wait_windows_exit(core.load(name, scope=name))
+                if name != 'gyros':
+                    core.wait_windows_exit(core.load(name, scope=name))
             core.wait_port(p['port'], core.windows_port_free)
         preflight(p)
         env = dict(os.environ, LLAMA_STRATA_IN_SCOPE='1')

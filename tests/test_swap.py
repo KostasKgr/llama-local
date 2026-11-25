@@ -45,12 +45,12 @@ class SwapTests(unittest.TestCase):
             checked = [c.args[0] for c in sock.return_value.__enter__.return_value.connect_ex.call_args_list]
             self.assertEqual(checked, [('127.0.0.1', 1235), ('127.0.0.1', 1236), ('127.0.0.1', 1257)])
             self.assertEqual({c.args[0]['scope']: c.args[0]['port'] for c in preflight.call_args_list},
-                             {'bolt35': 1257, 'swift15': 1257, 'bonsai25': 1257})
+                             {'bolt35': 1257, 'swift15': 1257, 'bonsai25': 1257, 'gyros': 1257})
 
     def test_config_is_read_only_and_quotes_paths(self):
         with tempfile.TemporaryDirectory(prefix='swap path ') as temp:
             with patch.object(core, 'ROOT', Path(temp)), patch.object(core, 'load', side_effect=[
-                {'alias': 'bolt'}, {'alias': 'swift'}, {'alias': 'bonsai'}]):
+                {'alias': 'bolt'}, {'alias': 'swift'}, {'alias': 'bonsai'}, {'alias': 'gyros'}]):
                 config = json.loads(swap.config(18001, 18002))
                 self.assertEqual(list(Path(temp).iterdir()), [])
                 self.assertEqual(shlex.split(config['models']['bolt']['cmd'])[1],
@@ -96,6 +96,7 @@ class SwapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, patch.object(core, 'ROOT', Path(temp)), \
                 patch.object(swap, 'unit_state', return_value='deactivating'), \
                 patch.object(core, 'load', side_effect=lambda name: {'scope': name}), \
+                patch('lib.strata.stop') as stop_gyros, \
                 patch('lib.swap.subprocess.run') as run:
             swap.cleanup('mine')
             run.assert_not_called()
@@ -103,33 +104,39 @@ class SwapTests(unittest.TestCase):
             swap.state_path().write_text(json.dumps({'token': 'mine'}))
             swap.cleanup('another-instance')
             run.assert_not_called()
+            stop_gyros.assert_not_called()
             swap.cleanup('mine')
             self.assertEqual([c.args[0] for c in run.call_args_list], [
                 ['systemctl', '--user', 'stop', 'bolt35.scope'],
                 ['systemctl', '--user', 'stop', 'swift15.scope'],
                 ['systemctl', '--user', 'stop', 'bonsai25.scope']])
+            stop_gyros.assert_called_once_with({'scope': 'gyros'})
             self.assertFalse(swap.state_path().exists())
 
     def test_cleanup_waits_for_windows_servers_to_exit(self):
         profiles = {'bolt35': {'scope': 'bolt35', 'platform': 'linux'},
                     'swift15': {'scope': 'swift15', 'platform': 'windows'},
-                    'bonsai25': {'scope': 'bonsai25', 'platform': 'windows'}}
+                    'bonsai25': {'scope': 'bonsai25', 'platform': 'windows'},
+                    'gyros': {'scope': 'gyros', 'platform': 'windows'}}
         with tempfile.TemporaryDirectory() as temp, patch.object(core, 'ROOT', Path(temp)), \
                 patch.object(swap, 'unit_state', return_value='active'), \
                 patch.object(core, 'load', side_effect=profiles.get), \
-                patch.object(core, 'windows_server_running', side_effect=[True, False, False]) as running, \
+                patch.object(core, 'windows_server_running', side_effect=[True, False, False, False]) as running, \
+                patch('lib.strata.stop') as stop_gyros, \
                 patch('lib.core.time.sleep'), patch('lib.swap.subprocess.run'):
             swap.directory().mkdir(parents=True)
             swap.state_path().write_text(json.dumps({'token': 'mine'}))
             swap.cleanup('mine')
             self.assertEqual([c.args[0]['scope'] for c in running.call_args_list],
-                             ['swift15', 'swift15', 'bonsai25'])
+                             ['swift15', 'swift15', 'bonsai25', 'gyros'])
+            stop_gyros.assert_called_once_with(profiles['gyros'])
             self.assertFalse(swap.state_path().exists())
 
     def test_failed_cleanup_retains_ownership_for_retry(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(core, 'ROOT', Path(temp)), \
                 patch.object(swap, 'unit_state', return_value='active'), \
                 patch.object(core, 'load', return_value={}), \
+                patch('lib.strata.stop'), \
                 patch('lib.swap.subprocess.run', side_effect=subprocess.TimeoutExpired('stop', 40)):
             swap.directory().mkdir(parents=True)
             swap.state_path().write_text(json.dumps({'token': 'mine'}))
@@ -171,6 +178,7 @@ class SwapTests(unittest.TestCase):
                 patch.object(swap, 'preflight'), \
                 patch.object(swap, 'binary', return_value=Path('/bin/false')), \
                 patch.object(swap, 'unit_state', return_value='inactive'), patch.object(core, 'wait_port'), \
+                patch('lib.strata.stop'), \
                 patch.object(core, 'load', return_value={}), patch.dict(os.environ):
             with self.assertRaises(subprocess.CalledProcessError):
                 swap.serve('mine', temp, 1235, 1236)

@@ -32,4 +32,4 @@ tasks:
     cmds:
       - python3 llama.py start gyros --dry-run > /dev/null
       - python3 llama.py start bonsai25 --dry-run > /dev/null
-      - python3 llama.py swap config --profiles bolt35 swift15 bonsai25 gyros > /dev/null
+      - python3 llama.py swap config > /dev/null

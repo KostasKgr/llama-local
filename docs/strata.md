@@ -197,19 +197,20 @@ inventory trial packs; copy the installed pack's files to make one.
 
 ## llama-swap and pi
 
-The default coordinator selects Bolt, Swift, and Bonsai. Enable Gyro explicitly
-after installing all selected profiles, with no other server using the GPU or ports:
+The default coordinator selects Bolt, Swift, Bonsai, and Gyro-S. Install each
+profile before starting the coordinator, with the GPU and ports free.
 
 ```bash
-python3 llama.py swap config --profiles bolt35 swift15 bonsai25 gyros
-python3 llama.py swap start --profiles bolt35 swift15 bonsai25 gyros
+python3 llama.py swap config
+python3 llama.py swap start
 python3 llama.py swap status
 ```
 
 All selected models share one exclusive group. A switch completes backend cleanup
-before loading another model. Selecting Gyro gives the proxy a longer readiness
-deadline for its larger model. Manual production-profile start/stop refuses while
-the coordinator owns the machine; use `swap stop` first.
+before loading another model. The default group uses a longer readiness deadline
+for Gyro-S. Use `--profiles` to select installed profiles on a machine with a
+subset of the default group. Use `swap stop` before manually starting or stopping
+a production profile.
 
 When a proxy forwards requests with a non-local Host header, add the hostname to
 the git-ignored `.env`, for example `LLAMA_STRATA_ALLOWED_HOSTS=inference.example.com`.
@@ -242,7 +243,7 @@ Live GPU checks must run sequentially:
 python3 llama.py smoke bolt35
 python3 llama.py smoke swift15
 python3 llama.py smoke gyros
-python3 experiments/swap_smoke.py --profiles bolt35 swift15 gyros
+python3 experiments/swap_smoke.py
 ```
 
 Against an already loaded Gyro backend, check pi inference through the public proxy
